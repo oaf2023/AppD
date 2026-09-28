@@ -1,0 +1,18 @@
+# Exclusiones del contexto de build de las imágenes de servicios.
+.git
+.venv
+**/__pycache__
+**/*.pyc
+**/*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+node_modules
+apps
+tests
+docs
+infrastructure
+*.log
+*.err
+.env
+.env.*

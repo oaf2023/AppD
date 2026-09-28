@@ -1,0 +1,15 @@
+# Base de Kubernetes (kustomize) — Fase 1: manifests preparados, NO aplicados.
+# Validación: kubectl kustomize infrastructure/kubernetes/base
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: platform
+resources:
+  - namespace.yaml
+  - platform-config.yaml
+  - platform-secrets.yaml # PLACEHOLDER — ver ADR-0020
+  - gateway.yaml
+  - identity.yaml
+  - audit.yaml
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: "[PROJECT_NAME]"

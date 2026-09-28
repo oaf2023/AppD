@@ -1,0 +1,16 @@
+# Configuración NO sensible por servicio (los secretos van en platform-secrets.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-config
+  namespace: platform
+data:
+  ENVIRONMENT: "production"
+  LOG_LEVEL: "INFO"
+  FLAG_LIVE_TRADING: "false" # jamás true sin licencia (ADR-0012)
+  FLAG_MFA: "true"
+  REQUIRE_EMAIL_VERIFICATION: "true"
+  AUDIT_SERVICE_URL: "http://audit:8083"
+  IDENTITY_URL: "http://identity:8081"
+  AUDIT_URL: "http://audit:8083"
+  GATEWAY_URL: "http://gateway:8080"

@@ -1,0 +1,25 @@
+# Prometheus (perfil obs) — scrapea los servicios de la plataforma y el collector.
+# Uso: docker compose -f infrastructure/compose/compose.yml --profile obs up -d
+# En desarrollo local los servicios corren en el host (run(): 8080/8081/8083).
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: platform-services
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - host.docker.internal:8080 # gateway
+          - host.docker.internal:8081 # identity
+          - host.docker.internal:8083 # audit
+        labels:
+          platform: local
+
+  - job_name: otel-collector
+    static_configs:
+      - targets:
+          - otel-collector:8889
+        labels:
+          platform: local

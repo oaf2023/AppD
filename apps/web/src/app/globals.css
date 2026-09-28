@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+/*
+ * Tokens de diseño PROPIOS de [PROJECT_NAME] (Tailwind CSS 4, vía CSS).
+ * Definidos desde cero para el proyecto: no copian ni derivan del design
+ * system de Deriv ni de ningún tercero.
+ *
+ * Nota RTL (ADR-0015): en el markup se usan utilidades lógicas de Tailwind
+ * (`ms-*`/`me-*`/`ps-*`/`pe-*`, `start-*`/`end-*`, `text-start`/`text-end`)
+ * en lugar de `left`/`right`, para que el espejo RTL sea automático.
+ */
+@theme {
+  --font-sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+
+  /* Tinta de fondo (superficies oscuras propias). */
+  --color-ink: #0b1220;
+  --color-ink-soft: #131e33;
+
+  /* Acento de marca propio (escala mínima). */
+  --color-brand-300: #7dd3fc;
+  --color-brand-400: #38bdf8;
+  --color-brand-500: #0ea5e9;
+  --color-brand-600: #0284c7;
+
+  /* Superficies claras y texto. */
+  --color-paper: #f6f8fb;
+  --color-mist: #e6ebf2;
+
+  --spacing-shell: 1.5rem;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+}
+
+::selection {
+  background-color: var(--color-brand-300);
+  color: var(--color-ink);
+}
+
+/* Foco visible consistente (accesibilidad por teclado). */
+:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+}

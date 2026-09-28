@@ -1,0 +1,9 @@
+# Overlay dev — solo estructura (Fase 1: NO se aplica a ningún cluster).
+# Uso futuro: kubectl apply -k infrastructure/kubernetes/overlays/dev
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+labels:
+  - pairs:
+      environment: dev
