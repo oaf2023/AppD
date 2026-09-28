@@ -72,18 +72,36 @@ jobs:
           done
       - name: Levantar Redpanda
         run: |
-          docker run -d --name redpanda -p 19092:19092 \
-            docker.redpanda.com/redpandadata/redpanda:v24.3.4 \
-            redpanda start --overprovisioned --smp 1 --memory 512M --reserve-memory 0M \
-            --node-id 0 --check=false \
-            --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092 \
-            --advertise-kafka-addr internal://127.0.0.1:9092,external://127.0.0.1:19092
-          for i in $(seq 1 30); do
-            if docker exec redpanda rpk cluster health --brokers 127.0.0.1:19092 >/dev/null 2>&1; then
+          for attempt in 1 2 3; do
+            docker rm -f redpanda 2>/dev/null || true
+            if docker run -d --name redpanda -p 19092:19092 \
+              docker.redpanda.com/redpandadata/redpanda:v24.3.4 \
+              redpanda start --overprovisioned --smp 1 --memory 512M --reserve-memory 0M \
+              --node-id 0 --check=false \
+              --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092 \
+              --advertise-kafka-addr internal://127.0.0.1:9092,external://127.0.0.1:19092 \
+              2>/tmp/rp-run.log; then
               break
             fi
-            sleep 2
+            echo "::warning::docker run de Redpanda (intento ${attempt}) falló: $(tr '\n' ' ' </tmp/rp-run.log)"
+            sleep 10
+            if [ "${attempt}" = "3" ]; then
+              echo "::error::docker run de Redpanda falló 3 veces: $(tr '\n' ' ' </tmp/rp-run.log)"
+              exit 1
+            fi
           done
+          healthy=0
+          for i in $(seq 1 60); do
+            if docker exec redpanda rpk cluster health --brokers 127.0.0.1:19092 >/dev/null 2>&1; then
+              healthy=1
+              break
+            fi
+            sleep 3
+          done
+          if [ "${healthy}" != "1" ]; then
+            echo "::error::Redpanda no quedó saludable en 180s. Estado: $(docker ps -a --filter name=redpanda --format '{{.Status}}'). Logs: $(docker logs redpanda 2>&1 | tail -n 25 | tr '\n' '|')"
+            exit 1
+          fi
           docker exec redpanda rpk cluster health --brokers 127.0.0.1:19092
       - name: pytest (unit + integration + e2e)
         run: uv run pytest
