@@ -15,7 +15,7 @@ COPY services/audit ./services/audit
 
 RUN uv sync --frozen --no-dev --no-editable --package audit-service
 
-FROM python:3.13-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 RUN useradd --system --uid 10001 --create-home appuser
 
