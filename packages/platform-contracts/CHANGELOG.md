@@ -6,6 +6,14 @@ exige bump de versión **mayor**, entrada de deprecación con política `Sunset`
 anterior y guía de migración; los cambios aditivos (campos opcionales nuevos) usan bump menor.
 El gate de CI (`tools/export_openapi.py --check`) impide que el spec se aleje del código.
 
+## 0.1.1 — 2026-09-28
+
+### Cambiado
+- `info.title` de los tres specs: `[PROJECT_NAME] API Gateway` / `[PROJECT_NAME] Identity
+  Service` / `[PROJECT_NAME] Audit Service` → `MonedasAR …` (rename de identidad del
+  producto, `00-decisions.md` §1). Cambio de metadatos **compatible**: sin variación de
+  rutas, esquemas ni `info.version`.
+
 ## 0.1.0 — 2026-09-28
 
 ### Añadido

@@ -50,7 +50,7 @@ def create_app(*, auto_migrate: bool | None = None) -> FastAPI:
         reset_engine()
 
     app = FastAPI(
-        title="[PROJECT_NAME] Audit Service",
+        title="MonedasAR Audit Service",
         version="0.1.0",
         lifespan=lifespan,
         docs_url="/docs" if settings.environment in ("local", "development") else None,

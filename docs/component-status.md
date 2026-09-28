@@ -1,7 +1,7 @@
 # Estado de componentes — clasificación
 
 Fecha de verificación: 2026-09-28 · Fase 0 + Fase 1 (foundation)
-Proyecto: `[PROJECT_NAME]` · Fuente de verdad de decisiones: `docs/phase0/00-decisions.md`
+Proyecto: `MonedasAR` · Fuente de verdad de decisiones: `docs/phase0/00-decisions.md`
 
 Leyenda:
 `IMPLEMENTADO` (funciona y está verificado) · `PARCIAL` (existe pero incompleto) ·
@@ -18,6 +18,23 @@ pasa con `--audit-level=critical` (ver deuda 6); trivy CRITICAL → 0 en imagen 
 `terraform init -backend=false` + `validate` → válido; `kubectl kustomize` base+dev →
 renderiza; `docker compose … config` → OK; trazas OTel extremo a extremo verificadas
 (servicio → collector → Tempo, `GET /api/search` devuelve traceIDs).
+
+Evidencia frontend + despliegue (2026-09-28): `npm run lint/typecheck/build` verdes;
+E2E en navegador contra `http://192.168.1.200:40000` (landing → login → `/panel` con
+`/me` real); BFF con cookies `HttpOnly` verificadas; pipeline outbox→Redpanda→
+`audit.records` con 3 eventos (publicados, sin DLQ); stack OMV con 13 contenedores
+`healthy` (perfil obs incluido) y Grafana `:40021` respondiendo 200.
+
+Evidencia rename MonedasAR + portada (2026-09-28): rename completo de
+`[PROJECT_NAME]`/`[BRAND_NAME]` → `MonedasAR` (61 + 36 apariciones, 51 archivos:
+UI, títulos OpenAPI, manifests k8s, Terraform, docs; `[DOMAIN]` conservado como
+marcador literal; el label `app.kubernetes.io/part-of` ahora cumple la regex de
+Kubernetes); `ruff`/`format`/`mypy`/`fronteras`/`export_openapi --check` verdes;
+`uv run pytest` → **70 passed**; `npm run lint/typecheck/build` verdes; E2E en
+navegador local y contra `http://192.168.1.200:40000` → registro → login →
+`/panel` → logout → relogin (`ok=true`, 0 errores de consola propios; aviso COOP
+sobre HTTP LAN cosmético); redespliegue OMV con web+gateway+identity+audit
+reconstruidos, contenedores `healthy` y `healthz` OK.
 
 ---
 
@@ -50,6 +67,7 @@ renderiza; `docker compose … config` → OK; trazas OTel extremo a extremo ver
 | Redpanda (perfil `events`) + pipeline outbox | IMPLEMENTADO | Relay en `identity/outbox.py` (reintentos con backoff exp+jitter, DLQ `dlq.<topic>`, métricas de backlog/publicados/DLQ, migración `0002_outbox_relay`) → consumidor `audit/consumer.py` (grupo `audit-service`, commit tras insert, dedup `event_id`) |
 | Dockerfiles multi-stage non-root (gateway/identity/audit) | IMPLEMENTADO | Imágenes construidas; smoke `/healthz` 200 con migraciones en imagen |
 | Imágenes publicadas en registry | PENDIENTE | Referenciadas en K8s como `platform/<svc>:dev` |
+| **Despliegue en servidor OMV (Docker, `192.168.1.200`, puertos 40000-40100)** | IMPLEMENTADO | `deploy/compose.yml` (+`.env.example`, `prometheus.yml`, README): web 40000, gateway 40001, identity 40002, audit 40003, datos 40010-40012 (solo `127.0.0.1`), obs 40020-40024; 13 contenedores `healthy`; migraciones al arrancar (`sh -c` con comando explícito); secretos generados en servidor en `deploy/.env` (no versionado); E2E verificado 2026-09-28 (registro→login→panel, outbox→Redpanda→`audit.records`, Grafana 200) |
 | K8s base + overlay dev (kustomize, probes, securityContext, resources) | PARCIAL | `kubectl kustomize` renderiza; **NO aplicado** (Fase 1), secretos PLACEHOLDER (ADR-0020) |
 | Migraciones como init job en K8s | PENDIENTE | Hoy auto-migrate solo en entornos local/test (N §8.6) |
 
@@ -69,10 +87,16 @@ renderiza; `docker compose … config` → OK; trazas OTel extremo a extremo ver
 | Componente | Clasificación | Notas |
 |---|---|---|
 | `apps/web` shell Next.js 15 (App Router, TS estricto, Tailwind 4, PWA manifest, i18n `es`/`en` tipado, RTL preparado) | IMPLEMENTADO | build/lint/typecheck verdes |
-| Login/registro contra gateway (flujo real con tokens) | MOCK | Formulario en estado mock, sin `fetch`; marcado en UI |
+| Portada hero con acceso embebido (`AuthPanel`: pestañas Iniciar sesión/Crear cuenta reutilizando los formularios existentes; con sesión activa muestra saludo + enlace a `/panel`) + secciones ilustrativas: Mercados (7 categorías), Disponible hoy, Qué podrás hacer, Cómo empezar y aviso legal | IMPLEMENTADO | Copys i18n `es`/`en`; toda capacidad no implementada con badge "Próximamente · Fase"; sin cifras, precios ni datos de mercado inventados; E2E navegador local + OMV (`ok=true`) |
+| Sistema de diseño (primitivas `src/components/ui/`: Button/Input/Field/Select/Checkbox/Card/Container/Badge/Spinner, tokens AA en `globals.css`, header responsive con menú móvil y `aria-current`) | IMPLEMENTADO | Contraste AA verificado (primario `brand-700` 5,9:1, foco `brand-800` 7,1:1) |
+| BFF de autenticación (`src/app/api/auth/{login,register,session,logout}` → gateway; cookies httpOnly `at` 15 min + `rt` 30 d path `/api/auth`, `SameSite=Lax`, `Secure` por `COOKIE_SECURE`) | IMPLEMENTADO | E2E verificado contra el despliegue OMV: registro 201 → login 200 → `/panel` con `/me` real |
+| Login/registro/panel de usuario (formularios con validación por campo `aria-invalid`, errores en español, contraseña ≥12 alineada al contrato, panel con datos reales de `/me`, logout) | IMPLEMENTADO | Sin datos de mercado inventados: bloques marcados "Próximamente"; MFA → aviso 409 (UI MFA `PENDIENTE`) |
+| Páginas de error/404/loading propias + cabeceras de seguridad + `output: standalone` | IMPLEMENTADO | CSP con `'unsafe-inline'` (nonces `PENDIENTE`); aviso COOP ignorado sobre HTTP LAN es cosmético |
+| Imagen Docker del web (`apps/web/Dockerfile`, node:22-alpine, non-root, healthcheck) | IMPLEMENTADO | Construida localmente y en el servidor OMV |
 | Trading UI, catálogo de símbolos, depósitos | PENDIENTE | Fases 3–6 |
 | `apps/admin-shell` (backoffice) | PENDIENTE | Fase 7 |
 | Service Worker / offline completo | PENDIENTE | Manifest listo; SW con PWA completa |
+| Selector de idioma (catálogo `en` existe pero inalcanzable en runtime) | PENDIENTE | Locale fijo `es`; i18n completo en fase posterior |
 
 ## 6. CI/CD y gobernanza
 
@@ -94,7 +118,7 @@ renderiza; `docker compose … config` → OK; trazas OTel extremo a extremo ver
 | Pagos (depósitos/retiros) | REQUIERE PROVEEDOR (adapters de pago) |
 | KYC/AML | REQUIERE PROVEEDOR (proveedor de verificación) + REQUIERE DECISIÓN (alcance jurisdiccional) |
 | Operar en vivo (live trading, capital real) | REQUIERE LICENCIA/REGULACIÓN — `FLAG_LIVE_TRADING=false` forzado por código (ADR-0012) |
-| Identidad de marca/dominio (`[PROJECT_NAME]`, `[BRAND_NAME]`, `[DOMAIN]`) | REQUIERE DECISIÓN (Producto/Legal) |
+| Identidad de marca/dominio (nombre/marca `MonedasAR` DECIDIDO 2026-09-28; `[DOMAIN]` pendiente) | REQUIERE DECISIÓN (solo dominio: Producto/Legal) |
 | Locales restantes más allá de `es`/`en` (ADR-0015, 7 idiomas) | REQUIERE DECISIÓN (conjunto definitivo) |
 
 ---

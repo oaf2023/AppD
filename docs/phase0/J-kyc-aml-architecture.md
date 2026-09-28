@@ -1,7 +1,7 @@
 # J — Arquitectura KYC/AML y Jurisdicciones
 
 Fecha: 2026-09-27 · Fase 0 · Estado: `IMPLEMENTADO` (documento)
-Proyecto: `[PROJECT_NAME]` · Dominio: `[DOMAIN]` · Marca: `[BRAND_NAME]`
+Proyecto: `MonedasAR` · Dominio: `[DOMAIN]` · Marca: `MonedasAR`
 
 > **Regla de lectura**: diseño objetivo, no afirmación de implementación. Servicio `kyc` asignado a **Fase 6** (`00-decisions.md` §3), schema PostgreSQL propio `kyc` (ADR-0005, `O-database-strategy.md`); dominio `kyc-aml` con owner Compliance/KYC y steward CCO (`D-domain-map` #9). Eventos: catálogo `P-event-catalog.md` (#13–#15, consumidor de #1). Estados reales: `W-build-now.md` / `X-blocked-to-live.md`. **No se nombran proveedores concretos** (solo categorías) y **no se afirma acceso real a verificación de identidad, sanciones ni PEP** en ninguna fase hasta `REQUIERE PROVEEDOR` resuelto.
 

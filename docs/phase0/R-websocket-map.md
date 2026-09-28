@@ -1,7 +1,7 @@
 # R — Mapa WebSocket `/ws/v1` (Streaming Map)
 
 Fecha: 2026-09-27 · Fase 0 · Estado: `IMPLEMENTADO` (documento)
-Proyecto: `[PROJECT_NAME]` · Dominio: `[DOMAIN]` · Marca: `[BRAND_NAME]`
+Proyecto: `MonedasAR` · Dominio: `[DOMAIN]` · Marca: `MonedasAR`
 
 > **Regla de lectura**: diseño objetivo, no afirmación de implementación. La columna **Fase** indica la fase planeada; el estado real por componente se declara en `W-build-now.md` y `X-blocked-to-live.md`. Complemento REST: `Q-api-map.md`. Eventos de negocio (numéricos de las tablas): `P-event-catalog.md`.
 

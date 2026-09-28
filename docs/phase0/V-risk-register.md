@@ -1,7 +1,7 @@
 # V — Registro de Riesgos (Risk Register)
 
 Fecha: 2026-09-27 · Fase 0 · Estado: `IMPLEMENTADO` (documento)
-Proyecto: `[PROJECT_NAME]` · Dominio: `[DOMAIN]` · Marca: `[BRAND_NAME]`
+Proyecto: `MonedasAR` · Dominio: `[DOMAIN]` · Marca: `MonedasAR`
 
 > **Alcance**: registro vivo de riesgos de todo el proyecto (Fases 0–9), priorizado para una plataforma que **administrará dinero real en su estado final**. Fuentes: `00-decisions.md`, `A-executive-summary.md`, `T-roadmap.md`, `L-ledger-architecture.md`, `P-event-catalog.md`, `C-gap-analysis.md`.
 > **Regla de no-ficción**: este documento **no afirma cumplimiento** de ninguna norma, licencia ni certificación; solo describe riesgos, mitigaciones previstas y gates de revisión.

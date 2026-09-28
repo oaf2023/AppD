@@ -1,6 +1,6 @@
 # C — Gap Analysis (capacidades de referencia del mercado vs. estado Fase 0)
 
-Fecha: 2026-09-27 · Fase: 0 · Proyecto: `[PROJECT_NAME]`
+Fecha: 2026-09-27 · Fase: 0 · Proyecto: `MonedasAR`
 Advertencia: la Fase 1 aún no se ha ejecutado. Nada está `IMPLEMENTADO` en código. Estados permitidos aquí: `NO EXISTE` / `DISEÑADO` / `IMPLEMENTADO EN FASE 1` (este último solo como objetivo previsto, no como hecho). Capacidades descritas en términos genéricos del mercado; sin nombrar ni copiar a la plataforma de referencia, sin proveedores ni licencias inventados.
 
 ## 1. Trading multi-activo (spot simulado, derivados OTC, CFDs, contratos de duración)

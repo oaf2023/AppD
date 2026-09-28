@@ -1,7 +1,7 @@
 # G — Arquitectura de Seguridad (Security Architecture)
 
 Fecha: 2026-09-27 · Fase 0 · Estado: `IMPLEMENTADO` (documento)
-Proyecto: `[PROJECT_NAME]` · Dominio: `[DOMAIN]` · Marca: `[BRAND_NAME]`
+Proyecto: `MonedasAR` · Dominio: `[DOMAIN]` · Marca: `MonedasAR`
 Fuente canónica: `00-decisions.md` §7 (invariantes de seguridad) · Complementos: `Q-api-map.md` §1.6–1.8 y §5, `P-event-catalog.md`, `O-database-strategy.md`, `W-build-now.md`, `X-blocked-to-live.md`
 
 > **Regla de lectura**: este documento define el **diseño de seguridad objetivo** y los controles a implementar. No es una afirmación de cumplimiento ni de certificación. Ninguna norma (OWASP ASVS, PCI DSS, SOC 2, ISO 27001, GDPR) está **certificada ni auditada**: el nivel ASVS L2 es un **objetivo de diseño** y su verificación externa es `PENDIENTE`. Todo control se etiqueta con su estado real (`IMPLEMENTADO` / `PARCIAL` / `MOCK` / `PENDIENTE` / `REQUIERE PROVEEDOR` / `REQUIERE LICENCIA/REGULACIÓN`). A la fecha de este documento el repositorio contiene documentación de Fase 0; por tanto **todos los controles de código son `PENDIENTE` hasta la ejecución de Fase 1** salvo indicación.
@@ -38,7 +38,7 @@ Formato: **amenaza → control concreto → dónde se implementa**. Estado = est
 | Clickjacking | `X-Frame-Options: DENY` (o `frame-ancestors 'none'` en CSP) | `gateway` (§6) | `PENDIENTE` |
 | Manifest/service worker malicioso (PWA) | `serviceworker` acotado a origen propio; sin `importScripts` externo; actualización versionada y cache invalidado tras logout | `apps/web` (`public/`, registro SW) | `PENDIENTE` |
 | Fuga de datos por terceros (analytics, fonts, CDNs) | CSP `default-src 'self'`; sin CDNs de terceros; telemetría solo OTel propio sin PII | `gateway` CSP + `apps/web` | `PENDIENTE` |
-| Suplantación de dominio / phishing | Marcadores literales `[DOMAIN]`/`[BRAND_NAME]` hasta definición real; HSTS solo con dominio real (§6) | `00-decisions.md` §1 | `PENDIENTE` |
+| Suplantación de dominio / phishing | Marcador literal `[DOMAIN]` hasta definición real (marca `MonedasAR` ya definida); HSTS solo con dominio real (§6) | `00-decisions.md` §1 | `PENDIENTE` |
 | Robo de credenciales en formulario (autocompletado/extensiones) | `autocomplete` correcto (`current-password`/`one-time-code`), sin logging de body en auth | `apps/web` + `services/identity` | `PENDIENTE` |
 | Replay de respuestas sensibles | `Cache-Control: no-store` en rutas auth/identidad | `gateway` (§6) | `PENDIENTE` |
 
@@ -472,7 +472,7 @@ Destino: `services/audit` (append-only, consumidor de eventos) vía **transactio
 
 | Tema | Estado |
 |---|---|
-| Definición de `[DOMAIN]`/`[BRAND_NAME]` (HSTS real, CSP con dominios, certificados) | `PENDIENTE` (`00-decisions.md` §1) |
+| Definición de `[DOMAIN]` (HSTS real, CSP con dominios, certificados) | `PENDIENTE` (`00-decisions.md` §1) |
 | Algoritmo JWT (EdDSA vs RS256) y TTL exacto de refresh | `DECIDIR` en ADR |
 | Vault/KMS, CA/mTLS, WAF, anti-DDoS, CDN, HSM | `REQUIERE PROVEEDOR` |
 | Pen-test y auditoría de seguridad externa | `REQUIERE PROVEEDOR` |

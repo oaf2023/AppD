@@ -1,7 +1,7 @@
 # Q — Mapa de API REST `/api/v1/` (API Map)
 
 Fecha: 2026-09-27 · Fase 0 · Estado: `IMPLEMENTADO` (documento)
-Proyecto: `[PROJECT_NAME]` · Dominio: `[DOMAIN]` · Marca: `[BRAND_NAME]`
+Proyecto: `MonedasAR` · Dominio: `[DOMAIN]` · Marca: `MonedasAR`
 
 > **Regla de lectura**: este documento es el **mapa de rutas objetivo**, no una afirmación de implementación. La columna **Fase** indica la fase planeada (1–9). El estado real por componente (`IMPLEMENTADO` / `PARCIAL` / `MOCK` / `PENDIENTE` / `REQUIERE PROVEEDOR` / `REQUIERE LICENCIA`) se declara únicamente en `W-build-now.md` y `X-blocked-to-live.md`. Fase 1 real = `gateway`, `identity`, `audit`; todo lo demás está diseñado para fases posteriores.
 > Complemento: streaming en `R-websocket-map.md` (`/ws/v1`). Eventos de negocio: `P-event-catalog.md`. Decisiones canónicas: `00-decisions.md`.

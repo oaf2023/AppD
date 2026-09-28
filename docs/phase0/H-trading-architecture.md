@@ -1,7 +1,7 @@
 # H — Arquitectura de Trading (OMS · EMS · Margin · Risk · Positions)
 
 Fecha: 2026-09-27 · Fase 0 · Estado: `IMPLEMENTADO` (documento)
-Proyecto: `[PROJECT_NAME]` · Dominio: `[DOMAIN]` · Marca: `[BRAND_NAME]`
+Proyecto: `MonedasAR` · Dominio: `[DOMAIN]` · Marca: `MonedasAR`
 Servicios: `trading` (OMS/EMS/posiciones/margen/PnL) y `risk` (límites/circuit breakers) — catálogo `00-decisions.md` §3 (Fase 4).
 Fuentes: `00-decisions.md`, `L-ledger-architecture.md`, `P-event-catalog.md`, `B-requirements-matrix.md` (REQ-029…REQ-038, REQ-101, REQ-102).
 

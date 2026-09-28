@@ -1,14 +1,14 @@
 {
-  "name": "[PROJECT_NAME]",
-  "short_name": "[PROJECT_NAME]",
-  "description": "Shell inicial de la plataforma [PROJECT_NAME] de [BRAND_NAME] — Fase 1 foundation.",
+  "name": "MonedasAR",
+  "short_name": "MonedasAR",
+  "description": "Plataforma de trading de derivados OTC de MonedasAR — Fase 1 foundation, sin operativa real.",
   "lang": "es",
   "dir": "ltr",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#0b1220",
-  "theme_color": "#0b1220",
+  "background_color": "#f6f8fb",
+  "theme_color": "#f6f8fb",
   "icons": [
     {
       "src": "/icons/icon-192.svg",

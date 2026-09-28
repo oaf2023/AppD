@@ -1,7 +1,7 @@
 # E — C4 Context Diagram
 
 Fecha: 2026-09-27 · Fase 0 · Estado: `IMPLEMENTADO` (documento)  
-Proyecto: `[PROJECT_NAME]` · Dominio: `[DOMAIN]` · Marca: `[BRAND_NAME]`
+Proyecto: `MonedasAR` · Dominio: `[DOMAIN]` · Marca: `MonedasAR`
 
 ---
 
@@ -9,7 +9,7 @@ Proyecto: `[PROJECT_NAME]` · Dominio: `[DOMAIN]` · Marca: `[BRAND_NAME]`
 
 ```mermaid
 C4Context
-    title Diagrama de Contexto — [PROJECT_NAME] (Plataforma Derivados OTC)
+    title Diagrama de Contexto — MonedasAR (Plataforma Derivados OTC)
 
     Person(trader, "Trader / Usuario Final", "Opera vía Web/PWA: registro, login, cuenta demo/live, trading, wallet, reportes")
     Person(admin, "Admin / Backoffice", "Gestiona usuarios, cuentas, riesgo, KYC, feature flags, auditoría, reportes regulatorios")
@@ -22,7 +22,7 @@ C4Context
     System_Ext(msgprov, "Email / SMS / Push", "Canales notificación transaccional y marketing. Ej: `REQUIERE PROVEEDOR`")
     System_Ext(siem, "SIEM / SOC", "Ingesta logs, traces, métricas, alertas de seguridad. OTLP/HTTP")
 
-    System_Boundary(b0, "[PROJECT_NAME] — Sistema Core") {
+    System_Boundary(b0, "MonedasAR — Sistema Core") {
         System(gateway, "Gateway", "Edge: TLS termination, routing, JWT validation, rate limit, headers seguridad, request-id, OTel")
         System(identity, "Identity", "Usuarios, credenciales, sesiones, MFA, RBAC, API keys, devices, login history")
         System(audit, "Audit", "Log append-only inmutable de acciones críticas, event subscriptions, integrity chain, exports")

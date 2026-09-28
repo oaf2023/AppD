@@ -1,7 +1,7 @@
 # N — Estructura del Monorepo
 
 Fecha: 2026-09-27 · Fase 0 · Estado: `IMPLEMENTADO` (documento)
-Proyecto: `[PROJECT_NAME]` · Dominio: `[DOMAIN]` · Marca: `[BRAND_NAME]`
+Proyecto: `MonedasAR` · Dominio: `[DOMAIN]` · Marca: `MonedasAR`
 
 Fuente de verdad: `00-decisions.md` §3 (catálogo de servicios y aislamiento por schema) y ADR-0001 (monorepo único con `apps/ services/ packages/ infrastructure/`). Este documento define la forma concreta del repositorio para la Fase 1 y su crecimiento por fases.
 
@@ -47,7 +47,7 @@ platform/
 ├── Makefile / justfile           # atajos: up, test, lint, migrate (un solo entrypoint)
 │
 ├── apps/                         # aplicaciones desplegables (frontend)
-│   ├── web/                      # [PROJECT_NAME] web: Next.js 15 App Router + PWA (público)
+│   ├── web/                      # MonedasAR web: Next.js 15 App Router + PWA (público)
 │   │   ├── src/app/              # rutas (App Router), layouts, i18n/RTL
 │   │   ├── src/features/         # feature modules de UI (no lógica de negocio server)
 │   │   ├── src/instrumentation.ts# inicialización OTel del lado servidor

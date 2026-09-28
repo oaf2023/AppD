@@ -2,7 +2,7 @@
   "name": "platform-monorepo",
   "private": true,
   "version": "0.1.0",
-  "description": "[PROJECT_NAME] — monorepo de la plataforma FinTech/Trading",
+  "description": "MonedasAR — monorepo de la plataforma FinTech/Trading",
   "workspaces": [
     "apps/*",
     "packages/api-client",

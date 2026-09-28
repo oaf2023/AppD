@@ -3,4 +3,4 @@ kind: Namespace
 metadata:
   name: platform
   labels:
-    app.kubernetes.io/part-of: "[PROJECT_NAME]"
+    app.kubernetes.io/part-of: "MonedasAR"

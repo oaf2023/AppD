@@ -28,18 +28,18 @@
 
 ## 2. Contratos OpenAPI afectados
 
-> Fuente única: `packages/platform-contracts/openapi/<servicio>.yaml` (ADR-0004). Hoy el contrato versionado es `PENDIENTE` (`../component-status.md` §1); FastAPI genera `/docs` en local. No afirmar gates de CI que aún no existen.
+> Fuente única: `packages/platform-contracts/openapi/<servicio>.yaml` (ADR-0004). Contrato versionado `IMPLEMENTADO` (specs exportados + gate `tools/export_openapi.py --check` y test `test_openapi_sync` en CI); FastAPI genera `/docs` solo en entornos local/development.
 
 | Ruta | Método | Cambio (`compatible` / `breaking`) | `Idempotency-Key` (`Sí`/`N/A`) | Versión (`/api/v1`, `/internal/v1`) |
 |---|---|---|---|---|
 | `/api/v1/…` | `POST` | … | Sí (obligatorio en mutación financiera, `../phase0/Q-api-map.md` §1.8) | … |
 
-- [ ] Entrada añadida en `platform-contracts/CHANGELOG.md` clasificada `compatible` / `breaking` *(cuando el changelog exista; hoy `PENDIENTE`)*
+- [ ] Entrada añadida en `platform-contracts/CHANGELOG.md` clasificada `compatible` / `breaking` (changelog `IMPLEMENTADO`, hoy en 0.1.0)
 - [ ] Breaking change ⇒ major nuevo (`/api/v2`) + `Deprecation`/`Sunset` + ventana ≥ 90/180 días (ADR-0004 §4). Sin esto, la PR se bloquea.
 
 ## 3. Eventos afectados
 
-> Envelope canónico en `../phase0/P-event-catalog.md`; transporte según ADR-0007. **Realidad Fase 1:** el outbox de `identity` despacha por HTTP a `POST /internal/v1/audit-events` (`services/identity/src/identity/outbox.py`); el relay a Redpanda es `PENDIENTE` (ver `../runbooks/01-outbox-redpanda.md`).
+> Envelope canónico en `../phase0/P-event-catalog.md`; transporte según ADR-0007. **Realidad Fase 1:** outbox transaccional de `identity` → relay a Redpanda (`identity/outbox.py`, backoff+jitter, DLQ `dlq.<topic>`) → consumidor `audit` (dedup `event_id`); `IMPLEMENTADO` y verificado (ver `../runbooks/01-outbox-redpanda.md`).
 
 | `event_type` | `schema_version` | Topic (`<dominio>.<entidad>.<evento>`) | Productor → consumidor | Idempotencia consumidor (`event_id`) |
 |---|---|---|---|---|

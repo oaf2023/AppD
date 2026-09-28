@@ -1,4 +1,4 @@
-# [PROJECT_NAME] Audit Service — imagen multi-stage, non-root.
+# MonedasAR Audit Service — imagen multi-stage, non-root.
 # Build: docker build -f services/audit/Dockerfile -t platform/audit:dev .
 FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS builder
 

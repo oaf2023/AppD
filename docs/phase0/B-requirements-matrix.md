@@ -1,7 +1,7 @@
 # B — Requirements Matrix (matriz de requisitos derivada del prompt maestro, apartados 1–73)
 
 Fecha: 2026-09-27 · Fase: 0 · Estado global: `PENDIENTE` / `DISEÑADO` (Fase 1 aún no ejecutada)
-Proyecto: `[PROJECT_NAME]` · Fuente de verdad: `docs/phase0/00-decisions.md`
+Proyecto: `MonedasAR` · Fuente de verdad: `docs/phase0/00-decisions.md`
 Regla: ninguna fila se marca `IMPLEMENTADO`/`PARCIAL`/`MOCK` en código. Solo `PENDIENTE` (código no iniciado) o `DISEÑADO` (decisión/documento Fase 0 existente). Etiquetas `REQUIERE PROVEEDOR` / `REQUIERE LICENCIA` se usan en la columna de estado cuando el requisito es inalcanzable sin externo.
 
 ## Convenciones
@@ -147,7 +147,7 @@ Regla: ninguna fila se marca `IMPLEMENTADO`/`PARCIAL`/`MOCK` en código. Solo `P
 | REQ-129 | secrets | Rotación de JWT signing keys, webhook secrets y credenciales de servicio sin downtime | MUST | 8 | PENDIENTE | Test: rotación con solape; tokens viejos expiran por TTL, nuevos validan de inmediato |
 | REQ-130 | privacidad | Exportación/borrado de datos del titular (portabilidad y supresión) | MUST | 8 | PENDIENTE | Test: export incluye alcance declarado; borrado conserva ledger anonimizado donde la ley lo exija |
 | REQ-131 | entregables | Corte a LIVE con checklist: licencia, proveedor ejecución/pagos/KYC, contratos, auditoría externa | MUST | 9 | PENDIENTE / REQUIERE LICENCIA | Checklist en `X-blocked-to-live.md`; ningún ítem puede marcarse sin evidencia enlazada |
-| REQ-132 | legal | Prohibición de copiar identidad/activos/textos de la referencia; marca `[BRAND_NAME]` y placeholders | MUST | 0 | DISEÑADO (00 §1–§2) | Scan: sin strings/activos de la referencia; CI falla ante marca provisional en código/imagen/TLS/legal |
+| REQ-132 | legal | Prohibición de copiar identidad/activos/textos de la referencia; marca `MonedasAR` definida y marcador `[DOMAIN]` pendiente | MUST | 0 | DISEÑADO (00 §1–§2) | Scan: sin strings/activos de la referencia; CI falla ante marca provisional en código/imagen/TLS/legal |
 
 ## Cobertura de apartados 1–73
 

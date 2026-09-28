@@ -5,13 +5,13 @@ Estado: APROBADO POR USUARIO (plan de ejecución Fase 0 + Fase 1)
 
 Todos los documentos de `docs/phase0/` y `docs/adr/` deben ser consistentes con este archivo. En caso de conflicto, este documento prevalece hasta que se actualice mediante ADR nuevo.
 
-## 1. Identidad (placeholders literales)
+## 1. Identidad (nombre y marca definidos; dominio pendiente)
 
-- `PROJECT_NAME` = `[PROJECT_NAME]`
+- `PROJECT_NAME` = `MonedasAR`
 - `DOMAIN` = `[DOMAIN]`
-- `BRAND_NAME` = `[BRAND_NAME]`
+- `BRAND_NAME` = `MonedasAR`
 
-Ningún nombre provisional se propaga a código, imágenes Docker, dominios TLS ni documentación legal. Todo sitio que requiera marca usa el marcador literal.
+Nombre y marca (`MonedasAR`) decididos por Producto el 2026-09-28 y propagados a código, imágenes Docker, Títulos OpenAPI y documentación. `DOMAIN` sigue literal `[DOMAIN]`: ningún dominio TLS, CSP, certificado ni declaración legal se da por existente hasta su definición por Legal.
 
 ## 2. Referencia funcional
 

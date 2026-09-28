@@ -6,12 +6,12 @@ Fecha: 2026-09-27 · Fase 0 · Estado: `IMPLEMENTADO` (documento)
 
 ```mermaid
 C4Container
-title Diagrama de Contenedores — [PROJECT_NAME] (Fase 1 vs Fase 2+)
+title Diagrama de Contenedores — MonedasAR (Fase 1 vs Fase 2+)
 
 Person(customer, "Cliente / Trader", "Navegador / PWA")
 Person(admin_user, "Admin / Backoffice", "Navegador")
 
-System_Boundary(system, "[PROJECT_NAME] — Plataforma FinTech/Trading OTC") {
+System_Boundary(system, "MonedasAR — Plataforma FinTech/Trading OTC") {
 
     %% ==================== FASE 1 (EXISTENTE TRAS ESTA FASE) ====================
     Container_Boundary(phase1, "Fase 1 — Foundation (EXISTENTE TRAS FASE 1)") {

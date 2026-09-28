@@ -6,7 +6,7 @@
 
 ## Contexto
 
-`[PROJECT_NAME]` es greenfield. La Fase 1 solo implementa `gateway`, `identity` y `audit`, pero el catálogo canónico prevé 13 servicios, dos aplicaciones frontend (`apps/web`, `apps/admin-shell`) y paquetes compartidos (`platform-kernel`, `platform-contracts`, `api-client`, `types`, `ui`, `config`, `security`).
+`MonedasAR` es greenfield. La Fase 1 solo implementa `gateway`, `identity` y `audit`, pero el catálogo canónico prevé 13 servicios, dos aplicaciones frontend (`apps/web`, `apps/admin-shell`) y paquetes compartidos (`platform-kernel`, `platform-contracts`, `api-client`, `types`, `ui`, `config`, `security`).
 
 Hechos que condicionan la elección:
 

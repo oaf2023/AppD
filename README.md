@@ -1,10 +1,10 @@
-# [PROJECT_NAME] — Plataforma FinTech/Trading de derivados OTC
+# MonedasAR — Plataforma FinTech/Trading de derivados OTC
 
-Marca: `[BRAND_NAME]` · Dominio: `[DOMAIN]` · Estado: **Fase 0 (A–Z) + Fase 1 (foundation)**
+Marca: `MonedasAR` · Dominio: `[DOMAIN]` · Estado: **Fase 0 (A–Z) + Fase 1 (foundation)**
 
 Plataforma de trading de derivados OTC con paridad funcional objetivo frente a proveedores
-de referencia, construida desde cero. Los placeholders `[PROJECT_NAME]`, `[DOMAIN]` y
-`[BRAND_NAME]` se sustituyen cuando Producto/Legal definan la identidad.
+de referencia, construida desde cero. Nombre y marca definidos (`MonedasAR`, 00-decisions §1);
+el dominio permanece como marcador literal `[DOMAIN]` hasta que Legal confirme su definición.
 
 > **Seguridad**: `FLAG_LIVE_TRADING` es `false` por diseño y una validación lo hace fallar si
 > se intenta activar (ADR-0012). Las credenciales de compose/README son **solo para
@@ -76,6 +76,17 @@ docker compose -f infrastructure/compose/compose.yml --profile obs up -d
 > **Windows**: los endpoints locales usan `127.0.0.1` (no `localhost`) — el intento previo
 > a `::1` (IPv6) ante puertos con publicación IPv4 de Docker cuesta ~2 s por conexión.
 
+### Despliegue en servidor OMV (Docker)
+
+Stack completo publicado en el servidor de la LAN con **todos los puertos en el
+rango 40000–40100**: web `40000` · gateway `40001` · identity `40002` · audit `40003`
+· datos `40010–40012` (solo `127.0.0.1` del servidor) · observabilidad `40020–40024`.
+
+```bash
+# En el servidor (ver deploy/README.md para el detalle completo):
+cd /opt/platform && docker compose -f deploy/compose.yml up -d
+```
+
 ---
 
 ## Estructura
@@ -96,6 +107,7 @@ docker compose -f infrastructure/compose/compose.yml --profile obs up -d
 | `infrastructure/kubernetes/` | Manifests kustomize (base + overlay dev) — **preparados, NO aplicados** |
 | `.github/workflows/ci.yml` | CI: quality · test · web · security (gitleaks/pip-audit/npm audit) · supply-chain (SBOM/trivy) · infra (terraform/kustomize/compose) |
 | `.github/dependabot.yml` | Renovación semanal de pip/npm/actions/docker |
+| `deploy/` | Despliegue en servidor OMV: `compose.yml` (puertos 40000-40100), `.env.example`, `prometheus.yml`, runbook |
 
 ## Contratos básicos
 

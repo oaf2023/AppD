@@ -1,4 +1,4 @@
-# [PROJECT_NAME] Gateway Service — imagen multi-stage, non-root.
+# MonedasAR Gateway Service — imagen multi-stage, non-root.
 # Build: docker build -f services/gateway/Dockerfile -t platform/gateway:dev .
 FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS builder
 

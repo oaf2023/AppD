@@ -10,9 +10,9 @@ variable "environment" {
 }
 
 variable "project_name" {
-  description = "Identificador del proyecto. Placeholder hasta la decisión de marca (REQUIERE DECISIÓN)."
+  description = "Identificador del proyecto (MonedasAR, decidido en 00-decisions §1)."
   type        = string
-  default     = "[PROJECT_NAME]"
+  default     = "MonedasAR"
 
   validation {
     condition     = length(var.project_name) > 0 && length(var.project_name) <= 64

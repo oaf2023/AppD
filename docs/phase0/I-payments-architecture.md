@@ -1,7 +1,7 @@
 # I — Arquitectura de Pagos (Depósitos y Retiros)
 
 Fecha: 2026-09-27 · Fase 0 · Estado: `IMPLEMENTADO` (documento)
-Proyecto: `[PROJECT_NAME]` · Dominio: `[DOMAIN]` · Marca: `[BRAND_NAME]`
+Proyecto: `MonedasAR` · Dominio: `[DOMAIN]` · Marca: `MonedasAR`
 
 > **Regla de lectura**: diseño objetivo, no afirmación de implementación. Servicio `payments` asignado a **Fase 6** (`00-decisions.md` §3), schema PostgreSQL propio `payments` (ADR-0005, `O-database-strategy.md`). Estados reales por componente (`IMPLEMENTADO`/`PARCIAL`/`MOCK`/`PENDIENTE`/`REQUIERE PROVEEDOR`/`REQUIERE LICENCIA`): `W-build-now.md` y `X-blocked-to-live.md`. Eventos: catálogo `P-event-catalog.md` (#18–#24, #38). Asientos: `L-ledger-architecture.md` §7.2/§7.3. Rutas: `Q-api-map.md` §2.13. **No se nombran proveedores concretos**: solo categorías de proveedor.
 

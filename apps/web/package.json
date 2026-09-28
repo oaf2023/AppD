@@ -2,7 +2,7 @@
   "name": "web",
   "version": "0.1.0",
   "private": true,
-  "description": "[PROJECT_NAME] — aplicación web pública (Next.js 15 App Router + PWA)",
+  "description": "MonedasAR — aplicación web pública (Next.js 15 App Router + PWA)",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

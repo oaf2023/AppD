@@ -4,7 +4,7 @@ output "environment" {
 }
 
 output "project_name" {
-  description = "Identificador efectivo del proyecto (placeholder hasta decisión de marca)."
+  description = "Identificador efectivo del proyecto (MonedasAR)."
   value       = var.project_name
 }
 

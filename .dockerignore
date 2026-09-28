@@ -1,4 +1,4 @@
-# Exclusiones del contexto de build de las imágenes de servicios.
+# Exclusiones del contexto de build (imágenes de servicios Python y web).
 .git
 .venv
 **/__pycache__
@@ -7,11 +7,13 @@
 .pytest_cache
 .mypy_cache
 .ruff_cache
-node_modules
-apps
+**/node_modules
+**/.next
+**/*.tsbuildinfo
 tests
 docs
 infrastructure
+deploy
 *.log
 *.err
 .env

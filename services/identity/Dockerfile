@@ -1,4 +1,4 @@
-# [PROJECT_NAME] Identity Service — imagen multi-stage, non-root.
+# MonedasAR Identity Service — imagen multi-stage, non-root.
 # Build: docker build -f services/identity/Dockerfile -t platform/identity:dev .
 FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS builder
 

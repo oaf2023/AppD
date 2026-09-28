@@ -1,6 +1,6 @@
 # Configuración de gitleaks (gate de CI BUILD-005, G-security §1.7).
 # Extiende el set por defecto; nada se desactiva salvo lo justificado abajo.
-title = "[PROJECT_NAME] gitleaks"
+title = "MonedasAR gitleaks"
 
 [extend]
 useDefault = true

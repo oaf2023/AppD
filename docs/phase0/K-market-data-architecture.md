@@ -1,7 +1,7 @@
 # K — Arquitectura de Market Data (Market Data Layer)
 
 Fecha: 2026-09-27 · Fase 0 · Estado: `IMPLEMENTADO` (documento)
-Proyecto: `[PROJECT_NAME]` · Dominio: `[DOMAIN]` · Marca: `[BRAND_NAME]`
+Proyecto: `MonedasAR` · Dominio: `[DOMAIN]` · Marca: `MonedasAR`
 
 > **Regla de lectura**: diseño objetivo, no afirmación de implementación ni de acceso a feeds reales. El estado por componente se declara en `W-build-now.md` y `X-blocked-to-live.md`. Complementos: `Q-api-map.md` §2.7/§3 (REST e interna), `R-websocket-map.md` §4 (topics WS), `P-event-catalog.md` (eventos de negocio), `00-decisions.md` (decisiones canónicas), `H-trading-architecture.md` (consumidor `trading`/`risk`).
 > **Afirmación explícita**: en este repositorio **no existe ningún feed de mercado contratado ni acceso a datos reales de terceros**. Todo proveedor externo figura como `REQUIERE PROVEEDOR`; toda redistribución de datos de terceros como `REQUIERE CONTRATO`. Hasta que exista evidencia en `X-blocked-to-live.md`, el único emisor de precios es el generador propio, etiquetado como simulado.

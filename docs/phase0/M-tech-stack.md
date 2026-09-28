@@ -1,7 +1,7 @@
 # M — Stack Tecnológico (justificación y alternativas descartadas)
 
 Fecha: 2026-09-27 · Fase 0 · Estado: `IMPLEMENTADO` (documento)
-Proyecto: `[PROJECT_NAME]` · Dominio: `[DOMAIN]` · Marca: `[BRAND_NAME]`
+Proyecto: `MonedasAR` · Dominio: `[DOMAIN]` · Marca: `MonedasAR`
 
 Fuente de verdad: `docs/phase0/00-decisions.md` §4. Este documento **detalla y justifica** la decisión ya tomada; no la modifica. En caso de conflicto prevalece `00-decisions.md`. ADR relacionados: ADR-0001 (monorepo), ADR-0003 (microservicios y lenguaje de latencia crítica), ADR-0005 (datos/ledger), ADR-0007 (Redpanda/outbox), ADR-0009 (auth), ADR-0011 (idempotencia).
 

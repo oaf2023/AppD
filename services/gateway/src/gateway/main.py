@@ -36,7 +36,7 @@ def create_app() -> FastAPI:
         await app.state.client.aclose()
 
     app = FastAPI(
-        title="[PROJECT_NAME] API Gateway",
+        title="MonedasAR API Gateway",
         version="0.1.0",
         lifespan=lifespan,
         docs_url=None,

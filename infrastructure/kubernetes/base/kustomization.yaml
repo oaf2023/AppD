@@ -12,4 +12,4 @@ resources:
   - audit.yaml
 labels:
   - pairs:
-      app.kubernetes.io/part-of: "[PROJECT_NAME]"
+      app.kubernetes.io/part-of: "MonedasAR"

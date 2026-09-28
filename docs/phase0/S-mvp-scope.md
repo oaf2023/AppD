@@ -4,7 +4,7 @@ Fecha: 2026-09-27 · Fase 0 · Estado: `IMPLEMENTADO` (documento)
 
 ## 1. Resumen Ejecutivo
 
-Este documento define el **alcance mínimo verificable** del MVP (Minimum Viable Product) para [PROJECT_NAME]. El MVP se entrega en **dos fases secuenciales autorizadas**:
+Este documento define el **alcance mínimo verificable** del MVP (Minimum Viable Product) para MonedasAR. El MVP se entrega en **dos fases secuenciales autorizadas**:
 
 - **Fase 1 — Foundation** (autorizada): Identidad, Auditoría, Gateway, Shell Web, Infraestructura, Observabilidad.
 - **Fase 2 — Account & Demo** (pendiente de autorización): Cuenta demo, Wallet demo, Ledger, Market Data básico, Trading demo (órdenes, posiciones, PnL, SL/TP, cierre, historial).

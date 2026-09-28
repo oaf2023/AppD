@@ -1,7 +1,7 @@
 # U — Dependencias Externas (External Dependencies)
 
 Fecha: 2026-09-27 · Fase 0 · Estado: `IMPLEMENTADO` (documento)
-Proyecto: `[PROJECT_NAME]` · Dominio: `[DOMAIN]` · Marca: `[BRAND_NAME]`
+Proyecto: `MonedasAR` · Dominio: `[DOMAIN]` · Marca: `MonedasAR`
 Complementa: `00-decisions.md` §10 (regla de no-ficción), `T-roadmap.md` (gates externos G3/G6/G8/G9), `X-blocked-to-live.md`.
 
 ---

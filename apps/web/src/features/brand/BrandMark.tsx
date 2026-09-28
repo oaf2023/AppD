@@ -6,12 +6,12 @@ type BrandMarkProps = {
 }
 
 /**
- * Marca gráfica propia y provisional de [BRAND_NAME].
+ * Marca gráfica propia (diseño inicial) de MonedasAR.
  *
  * Diseño original del proyecto (rectángulo redondeado + línea de tendencia
  * ascendente): no reproduce ni deriva de identidades de terceros.
  */
-export function BrandMark({ className, title = "[BRAND_NAME]" }: BrandMarkProps): React.JSX.Element {
+export function BrandMark({ className, title = "MonedasAR" }: BrandMarkProps): React.JSX.Element {
   return (
     <svg
       className={className}
