@@ -91,8 +91,10 @@ jobs:
             fi
           done
           healthy=0
-          for i in $(seq 1 60); do
-            if docker exec redpanda rpk cluster health --brokers 127.0.0.1:19092 >/dev/null 2>&1; then
+          for ((i=1; i<=60; i++)); do
+            out=$(docker exec redpanda rpk cluster health 2>/dev/null || true)
+            if [[ "${out}" == *Healthy:*true* ]] && \
+              docker exec redpanda rpk cluster info --brokers 127.0.0.1:19092 >/dev/null 2>&1; then
               healthy=1
               break
             fi
@@ -102,7 +104,8 @@ jobs:
             echo "::error::Redpanda no quedó saludable en 180s. Estado: $(docker ps -a --filter name=redpanda --format '{{.Status}}'). Logs: $(docker logs redpanda 2>&1 | tail -n 25 | tr '\n' '|')"
             exit 1
           fi
-          docker exec redpanda rpk cluster health --brokers 127.0.0.1:19092
+          docker exec redpanda rpk cluster health
+          docker exec redpanda rpk cluster info --brokers 127.0.0.1:19092
       - name: pytest (unit + integration + e2e)
         run: uv run pytest
 
