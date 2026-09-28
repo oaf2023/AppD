@@ -8,7 +8,7 @@ import uuid
 import httpx
 import psycopg
 import pytest
-from helpers import TEST_PASSWORD, TEST_POSTGRES_DSN, unique_email
+from helpers import TEST_PASSWORD, TEST_POSTGRES_DSN, redpanda_reachable, unique_email
 
 pytestmark = pytest.mark.e2e
 
@@ -110,7 +110,9 @@ async def test_flujo_completo_a_traves_del_gateway(servers: None) -> None:
         after_logout = await client.get("/api/v1/me", headers=auth)
         assert after_logout.status_code == 401
 
-    # los eventos del outbox llegan al Audit Service (dispatcher real por HTTP)
+    # los eventos del outbox llegan al Audit Service (relay Redpanda + consumidor)
+    if not redpanda_reachable():
+        pytest.skip("Redpanda no disponible: se omite la aserción de eventos end-to-end")
     found = await _wait_for_audit_events(
         user_id,
         {"UserRegistered", "UserEmailVerified", "UserLoggedIn"},

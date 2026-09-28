@@ -9,6 +9,7 @@ import time
 from typing import Any
 
 from platform_kernel.context import get_context
+from platform_kernel.telemetry import trace_fields
 
 _SENSITIVE_KEYS = {
     "password",
@@ -55,6 +56,7 @@ class JsonFormatter(logging.Formatter):
             "request_id": ctx.request_id,
             "correlation_id": ctx.correlation_id,
             "user_id": ctx.user_id,
+            **trace_fields(),
         }
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)

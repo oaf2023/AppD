@@ -1,7 +1,8 @@
 # Infraestructura local de la plataforma — docker compose
 # Uso: docker compose -f infrastructure/compose/compose.yml up -d postgres redis
-# Perfiles: events (Redpanda), obs (OpenTelemetry Collector + Prometheus + Grafana)
+# Perfiles: events (Redpanda), obs (OTel Collector + Prometheus + Grafana + Loki + Tempo + Alloy)
 # IMPORTANTE: credenciales de desarrollo local únicamente. Nunca usar en producción.
+# Todos los puertos de datos/observabilidad se publican SOLO en 127.0.0.1 (G-security §1.7).
 
 name: platform
 
@@ -13,7 +14,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-platform_local_dev_only}
       POSTGRES_DB: ${POSTGRES_DB:-platform}
     ports:
-      - "${POSTGRES_PORT:-5433}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     volumes:
       - ./initdb:/docker-entrypoint-initdb.d:ro
       - pgdata:/var/lib/postgresql/data
@@ -26,7 +27,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redisdata:/data
@@ -57,7 +58,7 @@ services:
       - --advertise-kafka-addr
       - internal://redpanda:9092,external://localhost:19092
     ports:
-      - "19092:19092"
+      - "127.0.0.1:19092:19092"
 
   otel-collector:
     profiles: ["obs"]
@@ -66,8 +67,8 @@ services:
     volumes:
       - ../monitoring/otel-collector.yaml:/etc/otelcol/config.yaml:ro
     ports:
-      - "4318:4318"
-      - "8889:8889"
+      - "127.0.0.1:4318:4318"
+      - "127.0.0.1:8889:8889"
 
   prometheus:
     profiles: ["obs"]
@@ -75,17 +76,65 @@ services:
     volumes:
       - ../monitoring/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
+
+  loki:
+    profiles: ["obs"]
+    image: grafana/loki:3.4.2
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ../monitoring/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - lokidata:/loki
+    ports:
+      - "127.0.0.1:3100:3100"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  tempo:
+    profiles: ["obs"]
+    image: grafana/tempo:2.7.1
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ../monitoring/tempo.yaml:/etc/tempo.yaml:ro
+      - tempodata:/var/tempo
+    ports:
+      - "127.0.0.1:3200:3200"
+
+  alloy:
+    profiles: ["obs"]
+    image: grafana/alloy:v1.7.5
+    command: ["run", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
+    volumes:
+      - ../monitoring/alloy-config.yaml:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloydata:/var/lib/alloy/data
+    depends_on:
+      - loki
 
   grafana:
     profiles: ["obs"]
     image: grafana/grafana:11.5.1
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-local_grafana_dev_only}
+    volumes:
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
 
 volumes:
   pgdata:
   redisdata:
+  lokidata:
+  tempodata:
+  alloydata:
+  grafanadata:

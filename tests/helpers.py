@@ -24,9 +24,8 @@ os.environ.update(
         "LOG_LEVEL": "WARNING",
         "JWT_SECRET": TEST_JWT_SECRET,
         "SERVICE_TOKEN_SECRET": TEST_SERVICE_SECRET,
-        "DATABASE_URL": "postgresql+psycopg://platform:platform_local_dev_only@localhost:5433/platform_identity",
-        "AUDIT_DATABASE_URL": "postgresql+psycopg://platform:platform_local_dev_only@localhost:5433/platform_audit",
-        "AUDIT_SERVICE_URL": "http://127.0.0.1:18083",
+        "DATABASE_URL": "postgresql+psycopg://platform:platform_local_dev_only@127.0.0.1:5433/platform_identity",
+        "AUDIT_DATABASE_URL": "postgresql+psycopg://platform:platform_local_dev_only@127.0.0.1:5433/platform_audit",
         "IDENTITY_URL": "http://127.0.0.1:18081",
         "AUDIT_URL": "http://127.0.0.1:18083",
         "FLAG_MFA": "true",
@@ -38,13 +37,26 @@ os.environ.update(
         "RATE_LIMIT_FORGOT_PER_HOUR": "10000",
         "RATE_LIMIT_GLOBAL_PER_MINUTE": "10000",
         "RATE_LIMIT_AUTH_PER_MINUTE": "10000",
-        "DISPATCHER_INTERVAL_SECONDS": "0.3",
+        "OUTBOX_RELAY_INTERVAL_MS": "200",
     }
 )
 
 
 def unique_email() -> str:
     return f"user-{uuid.uuid4().hex[:16]}@example.com"
+
+
+def redpanda_reachable(timeout: float = 2.0) -> bool:
+    """True si hay algo escuchando en el bootstrap de Redpanda (para skips de CI)."""
+    import socket
+
+    first = os.environ.get("REDPANDA_BOOTSTRAP_SERVERS", "127.0.0.1:19092").split(",")[0].strip()
+    host, _, port = first.rpartition(":")
+    try:
+        with socket.create_connection((host, int(port)), timeout=timeout):
+            return True
+    except OSError:
+        return False
 
 
 @asynccontextmanager

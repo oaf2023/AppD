@@ -1,6 +1,10 @@
-# OpenTelemetry Collector (perfil obs) — recibe OTLP y exporta métricas para Prometheus.
+# OpenTelemetry Collector (perfil obs) — recibe OTLP (métricas/traces/logs de los
+# servicios, cuando el SDK OTel está activo) y exporta:
+#   - métricas → Prometheus (:8889, scrapeado por prometheus.yaml)
+#   - traces   → Tempo (otlp/grpc tempo:4317)
+#   - logs     → Loki (otlp/http loki:3100/otlp) — pipeline en espera (dormant)
+#                hasta que los servicios exporten logs OTel.
 # Uso: docker compose -f infrastructure/compose/compose.yml --profile obs up -d
-# Los servicios envían traces/metrics por OTLP/HTTP a :4318; Prometheus scrapea :8889.
 
 receivers:
   otlp:
@@ -17,6 +21,12 @@ exporters:
     endpoint: 0.0.0.0:8889
     const_labels:
       platform: local
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
   debug:
     verbosity: basic
 
@@ -29,4 +39,8 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug]
+      exporters: [otlp/tempo, debug]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/loki, debug]

@@ -34,3 +34,11 @@ def clean_dbs(pg_available: None) -> None:
     """Elimina los schemas entre ejecuciones de la suite (migraciones los recrean)."""
     _reset_database("platform_identity", ["identity"])
     _reset_database("platform_audit", ["audit"])
+
+
+@pytest.fixture(scope="session")
+def redpanda_available() -> None:
+    from helpers import redpanda_reachable
+
+    if not redpanda_reachable():
+        pytest.skip("Redpanda no disponible (REDPANDA_BOOTSTRAP_SERVERS)")

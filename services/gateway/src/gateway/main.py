@@ -14,6 +14,7 @@ from platform_kernel.logging import setup_logging
 from platform_kernel.metrics import MetricsMiddleware
 from platform_kernel.middleware import RequestContextMiddleware
 from platform_kernel.ratelimit import build_rate_limiter
+from platform_kernel.telemetry import init_telemetry, instrument_app
 
 from gateway.config import get_gateway_settings
 from gateway.proxy import router
@@ -24,6 +25,7 @@ logger = logging.getLogger("gateway")
 def create_app() -> FastAPI:
     settings = get_gateway_settings()
     setup_logging(settings.service_name, settings.log_level)
+    init_telemetry(settings.otel_endpoint, service_name=settings.service_name)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -54,6 +56,7 @@ def create_app() -> FastAPI:
         )
     app.add_middleware(RequestContextMiddleware, trust_client_request_id=False)
     install_error_handlers(app)
+    instrument_app(app)
     return app
 
 

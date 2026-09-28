@@ -1,0 +1,14 @@
+# Configuración de gitleaks (gate de CI BUILD-005, G-security §1.7).
+# Extiende el set por defecto; nada se desactiva salvo lo justificado abajo.
+title = "[PROJECT_NAME] gitleaks"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = """
+Fixtures de tests: cadenas de prueba locales (p. ej. TEST_JWT_SECRET) que nunca se
+despliegan ni autorizan nada. Se mantienen visibles en el repo por diseño (ADR-0020:
+los secretos reales jamás entran al repo; en su lugar hay placeholders verificables).
+"""
+paths = ['''^tests/''']

@@ -13,6 +13,7 @@ from platform_kernel.errors import install_error_handlers
 from platform_kernel.logging import setup_logging
 from platform_kernel.metrics import MetricsMiddleware, metrics_response
 from platform_kernel.middleware import RequestContextMiddleware
+from platform_kernel.telemetry import init_telemetry, instrument_app
 
 from audit.config import get_audit_settings
 from audit.db import get_engine, reset_engine
@@ -24,6 +25,7 @@ logger = logging.getLogger("audit")
 def create_app(*, auto_migrate: bool | None = None) -> FastAPI:
     settings = get_audit_settings()
     setup_logging(settings.service_name, settings.log_level)
+    init_telemetry(settings.otel_endpoint, service_name=settings.service_name)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -32,8 +34,18 @@ def create_app(*, auto_migrate: bool | None = None) -> FastAPI:
             from audit.migrate import run_migrations
 
             await asyncio.to_thread(run_migrations, settings.audit_database_url)
+        consumer = None
+        if settings.event_consumer_enabled:
+            from audit.consumer import AuditEventConsumer
+            from audit.db import get_session_factory
+
+            consumer = AuditEventConsumer(get_session_factory(), settings)
+            await consumer.start()
+        app.state.event_consumer = consumer
         logger.info("audit listo", extra={"extra_fields": {"environment": settings.environment}})
         yield
+        if consumer is not None:
+            await consumer.stop()
         await get_engine().dispose()
         reset_engine()
 
@@ -62,6 +74,7 @@ def create_app(*, auto_migrate: bool | None = None) -> FastAPI:
     async def metrics():  # type: ignore[no-untyped-def]
         return metrics_response()
 
+    instrument_app(app)
     return app
 
 

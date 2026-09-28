@@ -25,8 +25,9 @@ de referencia, construida desde cero. Los placeholders `[PROJECT_NAME]`, `[DOMAI
 # 1. Dependencias Python (workspace uv — TODOS los miembros)
 uv sync --all-packages
 
-# 2. Infraestructura local (PostgreSQL en puerto 5433, Redis en 6379)
-docker compose -f infrastructure/compose/compose.yml up -d postgres redis
+# 2. Infraestructura local (PostgreSQL en 5433, Redis en 6379, Redpanda en 19092)
+#    Sin Redpanda la suite pasa igual, pero los tests de eventos se saltan.
+docker compose -f infrastructure/compose/compose.yml --profile events up -d postgres redis redpanda
 
 # 3. Suite de pruebas (unit + integration + e2e): requiere el paso 2
 uv run pytest
@@ -47,6 +48,8 @@ npm run dev --workspace apps/web   # http://localhost:3000
 uv run ruff check .            # lint Python
 uv run ruff format --check .   # formato
 uv run mypy packages services  # tipos strict
+uv run python tools/check_boundaries.py      # fronteras del monorepo
+uv run python tools/export_openapi.py --check # OpenAPI sin deriva
 npm run lint --workspace apps/web
 npm run typecheck --workspace apps/web
 npm run build --workspace apps/web
@@ -64,8 +67,14 @@ docker build -f services/audit/Dockerfile    -t platform/audit:dev .
 
 ```powershell
 docker compose -f infrastructure/compose/compose.yml --profile obs up -d
-# Prometheus http://localhost:9090 · Grafana http://localhost:3001 · OTLP/HTTP :4318
+# Prometheus http://localhost:9090 · Grafana http://localhost:3001 (datasources
+# prometheus/loki/tempo provisionadas + dashboard RED) · Loki :3100 · Tempo :3200
+# Alloy → logs JSON de los contenedores platform-* a Loki
+# Trazas: ejecutar un servicio con OTEL_ENDPOINT=http://127.0.0.1:4318 exporta a Tempo
 ```
+
+> **Windows**: los endpoints locales usan `127.0.0.1` (no `localhost`) — el intento previo
+> a `::1` (IPv6) ante puertos con publicación IPv4 de Docker cuesta ~2 s por conexión.
 
 ---
 
@@ -82,16 +91,19 @@ docker compose -f infrastructure/compose/compose.yml --profile obs up -d
 | `tests/` | Suite cruzada: unit, integration (PostgreSQL real), e2e (3 servidores reales) |
 | `apps/web/` | Frontend shell Next.js 15 (npm workspaces, TS estricto, Tailwind 4, PWA) |
 | `infrastructure/compose/` | Stack local (postgres:5433, redis, redpanda, perfiles `events`/`obs`) |
-| `infrastructure/monitoring/` | Config de OTel Collector y Prometheus |
+| `infrastructure/monitoring/` | OTel Collector, Prometheus, Loki, Tempo, Alloy y Grafana (dashboard RED) |
+| `infrastructure/terraform/` | Estructura IaC inicial (REQUIERE PROVEEDOR; `terraform validate` OK) |
 | `infrastructure/kubernetes/` | Manifests kustomize (base + overlay dev) — **preparados, NO aplicados** |
-| `.github/workflows/ci.yml` | CI: ruff/format/mypy + suite pytest con PostgreSQL efímero |
+| `.github/workflows/ci.yml` | CI: quality · test · web · security (gitleaks/pip-audit/npm audit) · supply-chain (SBOM/trivy) · infra (terraform/kustomize/compose) |
+| `.github/dependabot.yml` | Renovación semanal de pip/npm/actions/docker |
 
 ## Contratos básicos
 
 - Errores: RFC 9457 `application/problem+json` con `request_id`/`correlation_id`.
 - Auth: JWT access ≤15 min + refresh rotativo con detección de reuso; token de servicio `typ=service` ≤5 min.
 - Idempotencia: cabecera `Idempotency-Key` en mutaciones.
-- Eventos: outbox transaccional → Audit Service (dedup por `event_id`).
+- Eventos: outbox transaccional → Redpanda (relay con reintentos/backoff y DLQ) → Audit
+  Service (consumer con dedup por `event_id`); API HTTP de ingesta batch disponible.
 - Dinero: `Decimal` + `ROUND_HALF_UP`; floats prohibidos (unit-tested).
 
 ## Enlaces

@@ -29,3 +29,11 @@ dist/
 coverage/
 *.log
 .opencode/tmp/
+
+# Terraform (solo estructura; jamás estado ni credenciales — ADR-0020)
+**/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+!*.tfvars.example

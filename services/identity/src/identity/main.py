@@ -15,10 +15,11 @@ from platform_kernel.logging import setup_logging
 from platform_kernel.metrics import MetricsMiddleware, metrics_response
 from platform_kernel.middleware import RequestContextMiddleware
 from platform_kernel.ratelimit import build_rate_limiter
+from platform_kernel.telemetry import init_telemetry, instrument_app
 
 from identity.config import get_identity_settings
 from identity.db import get_engine, reset_engine
-from identity.outbox import OutboxDispatcher
+from identity.outbox import OutboxRelay
 from identity.routes import router
 
 logger = logging.getLogger("identity")
@@ -27,6 +28,7 @@ logger = logging.getLogger("identity")
 def create_app(*, auto_migrate: bool | None = None) -> FastAPI:
     settings = get_identity_settings()
     setup_logging(settings.service_name, settings.log_level)
+    init_telemetry(settings.otel_endpoint, service_name=settings.service_name)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -39,12 +41,15 @@ def create_app(*, auto_migrate: bool | None = None) -> FastAPI:
         app.state.idempotency = await build_idempotency_store(settings.redis_url)
         from identity.db import get_session_factory
 
-        dispatcher = OutboxDispatcher(get_session_factory(), settings)
-        await dispatcher.start()
-        app.state.dispatcher = dispatcher
+        relay: OutboxRelay | None = None
+        if settings.outbox_relay_enabled:
+            relay = OutboxRelay(get_session_factory(), settings)
+            await relay.start()
+        app.state.relay = relay
         logger.info("identity listo", extra={"extra_fields": {"environment": settings.environment}})
         yield
-        await dispatcher.stop()
+        if relay is not None:
+            await relay.stop()
         engine = get_engine()
         await engine.dispose()
         reset_engine()
@@ -74,6 +79,7 @@ def create_app(*, auto_migrate: bool | None = None) -> FastAPI:
     async def metrics():  # type: ignore[no-untyped-def]
         return metrics_response()
 
+    instrument_app(app)
     return app
 
 

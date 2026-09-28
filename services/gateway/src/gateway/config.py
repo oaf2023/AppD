@@ -12,8 +12,9 @@ class GatewaySettings(KernelSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_file_encoding="utf-8")
 
     service_name: str = "gateway"
-    identity_url: str = "http://localhost:8081"
-    audit_url: str = "http://localhost:8083"
+    # 127.0.0.1 evita el intento previo a ::1 (IPv6) que en Windows+Docker tarda ~2s por conexión
+    identity_url: str = "http://127.0.0.1:8081"
+    audit_url: str = "http://127.0.0.1:8083"
 
     rate_limit_global_per_minute: int = 120
     rate_limit_auth_per_minute: int = 30

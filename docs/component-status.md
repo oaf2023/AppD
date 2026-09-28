@@ -8,10 +8,16 @@ Leyenda:
 `MOCK` (simulado) · `PENDIENTE` (no empezado) · `REQUIERE PROVEEDOR` ·
 `REQUIERE LICENCIA/REGULACIÓN` · `REQUIERE DECISIÓN`
 
-Evidencia de verificación: `uv run ruff check .` + `ruff format --check .` + `mypy packages services`
-limpios; `uv run pytest` → **52 passed (30 unit, 19 integration, 3 e2e), 0 warnings**;
-`npm run build/lint/typecheck --workspace apps/web` → correcto; `docker build` de las 3
-imágenes → OK; smoke de imagen identity/audit → `/healthz` 200; `kubectl kustomize base` → renderiza.
+Evidencia de verificación (2026-09-28): `uv run ruff check .` + `ruff format --check .` +
+`mypy packages services` limpios; `uv run python tools/check_boundaries.py` y
+`tools/export_openapi.py --check` verdes; `uv run pytest` → **70 passed (45 unit, 22
+integration, 3 e2e)** contra PostgreSQL y Redpanda reales; `npm run lint/typecheck/build
+--workspace apps/web` → correcto; `docker build` de las 3 imágenes → OK; gitleaks v8.30.1
+→ 0 hallazgos (`.gitleaks.toml`); pip-audit → 0 vulnerabilidades conocidas; npm audit
+pasa con `--audit-level=critical` (ver deuda 6); trivy CRITICAL → 0 en imagen identity;
+`terraform init -backend=false` + `validate` → válido; `kubectl kustomize` base+dev →
+renderiza; `docker compose … config` → OK; trazas OTel extremo a extremo verificadas
+(servicio → collector → Tempo, `GET /api/search` devuelve traceIDs).
 
 ---
 
@@ -20,10 +26,10 @@ imágenes → OK; smoke de imagen identity/audit → `/healthz` 200; `kubectl ku
 | Componente | Clasificación | Notas |
 |---|---|---|
 | `packages/platform-kernel` (config, errores RFC 9457, logging JSON, auth JWT+roles, tokens, `money` Decimal, rate limit, idempotencia, middleware request-id, métricas Prometheus, loop_factory Windows) | IMPLEMENTADO | mypy strict; tests unitarios; redacción de secretos en logs |
-| Exportación **traces OpenTelemetry** desde servicios | PENDIENTE | Existe ADR-0013 y `instrumentation.ts` stub; falta SDK OTel en Python (Fase posterior) |
+| Exportación **traces OpenTelemetry** desde servicios | IMPLEMENTADO | SDK en `platform_kernel/telemetry.py` (OTLP/HTTP, instrumentación FastAPI+httpx, propagación W3C `traceparent`); activo solo con `OTEL_ENDPOINT`; E2E verificado contra Tempo (REQ-057) |
 | `packages/platform-contracts` (roles, envelope de eventos, headers internos, esquemas de audit) | IMPLEMENTADO | 9 eventos del catálogo Fase 1 implementados |
-| OpenAPI por servicio (`platform-contracts/openapi/*.yaml`) + tests de contrato | PENDIENTE | FastAPI genera `/docs` en local; contrato versionado y gates de CI en Fase posterior |
-| `platform-contracts/CHANGELOG.md` de contratos | PENDIENTE | Requerido al primer cambio de contrato |
+| OpenAPI por servicio (`platform-contracts/openapi/*.yaml`) + tests de contrato | PARCIAL | Specs canónicos exportados (`tools/export_openapi.py`, gate `--check` en CI, `test_openapi_sync`); falta test productor/consumidor en runtime |
+| `platform-contracts/CHANGELOG.md` de contratos | IMPLEMENTADO | 0.1.0 (Fase 1) |
 
 ## 2. Servicios Fase 1
 
@@ -39,9 +45,9 @@ imágenes → OK; smoke de imagen identity/audit → `/healthz` 200; `kubectl ku
 
 | Componente | Clasificación | Notas |
 |---|---|---|
-| Compose local: PostgreSQL 17 (puerto **5433**), Redis 7, initdb con `platform_identity`/`platform_audit`/`platform_gateway` | IMPLEMENTADO | Healthy; notas Windows: servicio nativo de PG ocupa 5432; psycopg exige SelectorEventLoop (mitigado en kernel + `loop_factory`) |
+| Compose local: PostgreSQL 17 (puerto **5433**), Redis 7, initdb con `platform_identity`/`platform_audit`/`platform_gateway` | IMPLEMENTADO | Healthy; todos los puertos de datos/obs enlazan a `127.0.0.1` (evita `localhost`→`::1`, que en Windows+Docker tarda ~2 s por conexión); psycopg exige SelectorEventLoop (mitigado en kernel + `loop_factory`) |
 | Migraciones Alembic por servicio (schema propio, upgrade/downgrade) | IMPLEMENTADO | Commit explícito en `env.py` (evita autobegin); fix `path_separator` |
-| Redpanda (perfil `events`) | IMPLEMENTADO (compose) | Sin consumidores/productores todavía (outbox → audit va por HTTP en Fase 1) |
+| Redpanda (perfil `events`) + pipeline outbox | IMPLEMENTADO | Relay en `identity/outbox.py` (reintentos con backoff exp+jitter, DLQ `dlq.<topic>`, métricas de backlog/publicados/DLQ, migración `0002_outbox_relay`) → consumidor `audit/consumer.py` (grupo `audit-service`, commit tras insert, dedup `event_id`) |
 | Dockerfiles multi-stage non-root (gateway/identity/audit) | IMPLEMENTADO | Imágenes construidas; smoke `/healthz` 200 con migraciones en imagen |
 | Imágenes publicadas en registry | PENDIENTE | Referenciadas en K8s como `platform/<svc>:dev` |
 | K8s base + overlay dev (kustomize, probes, securityContext, resources) | PARCIAL | `kubectl kustomize` renderiza; **NO aplicado** (Fase 1), secretos PLACEHOLDER (ADR-0020) |
@@ -53,10 +59,10 @@ imágenes → OK; smoke de imagen identity/audit → `/healthz` 200; `kubectl ku
 |---|---|---|
 | Logs JSON estructurados con request_id/correlation_id y redacción | IMPLEMENTADO | Formato UTC Windows-safe |
 | Métricas Prometheus por servicio (`/metrics`) + middleware | IMPLEMENTADO | Scrape configurado en `prometheus.yaml` |
-| OTel Collector config (perfil `obs`) | IMPLEMENTADO | Archivo creado y validado por `docker compose config` |
-| Prometheus + Grafana (perfil `obs`) | IMPLEMENTADO (compose) | Grafana sin datasource provisioning automático (manual en Fase 1) |
-| Dashboards RED/SLO, reglas de alerta, runbooks | PENDIENTE | `infrastructure/monitoring/` solo tiene collector+prometheus |
-| Atributos/propagación OTel traces extremo a extremo | PENDIENTE | ADR-0013 define la dirección; implementación posterior |
+| OTel Collector config (perfil `obs`) | IMPLEMENTADO | Pipelines: traces → Tempo, metrics → Prometheus `:8889`, logs → Loki (dormant hasta que servicios exporten logs OTel) |
+| Prometheus + Grafana + Loki + Tempo + Alloy (perfil `obs`) | IMPLEMENTADO (compose) | Datasources provisionadas por UID (`prometheus`/`loki`/`tempo`); Alloy con docker_sd filtra contenedores `platform-*` → Loki (flujo verificado: `streams=1`) |
+| Dashboard RED en Grafana + runbooks | PARCIAL | Dashboard `grafana/dashboards/red.json` provisionado (req rate, %5xx, p95, outbox backlog/DLQ); runbooks 01–03 + README; faltan reglas de alerta |
+| Atributos/propagación OTel traces extremo a extremo | IMPLEMENTADO | `init_telemetry` + `instrument_app` en los 3 servicios + `traceparent` de salida; E2E verificado: batch de spans del servicio llega al collector y Tempo responde en `/api/search` (ADR-0013, REQ-057) |
 
 ## 5. Frontend
 
@@ -72,10 +78,11 @@ imágenes → OK; smoke de imagen identity/audit → `/healthz` 200; `kubectl ku
 
 | Componente | Clasificación | Notas |
 |---|---|---|
-| `.github/workflows/ci.yml` (ruff/format/mypy + pytest con PostgreSQL efímero y creación de DBs por servicio) | IMPLEMENTADO | Sin ejecución real en GitHub aún (repo sin remote) |
-| Path filters por servicio, CODEOWNERS, dependabot, secret-scan, SBOM | PENDIENTE | Previstos en `M-tech-stack.md` §11 / `N-monorepo-structure.md` |
-| Tests de contrato productor/consumidor | PENDIENTE | Requiere OpenAPI versionado |
-| Análisis de dependencias (pip-audit, npm audit) en CI | PENDIENTE | — |
+| `.github/workflows/ci.yml` | IMPLEMENTADO | 6 jobs: `quality` (ruff/format/mypy/fronteras/OpenAPI), `test` (pytest con PostgreSQL+Redpanda efímeros), `web` (lint/typecheck/build), `security` (gitleaks+pip-audit+npm audit), `supply-chain` (docker build+SBOM syft+trivy CRITICAL), `infra` (terraform/kustomize/compose); actions pinnadas por SHA; **aún no ejecutado en GitHub (requiere push)** |
+| dependabot + secret-scan + análisis de dependencias + SBOM/CVE | IMPLEMENTADO | `.github/dependabot.yml` (pip/npm/actions/docker); gitleaks con `.gitleaks.toml`; pip-audit vía `uv export`; npm audit (bloqueo a nivel crítico); syft SBOM como artefacto; trivy CRITICAL bloquea |
+| Path filters por servicio | PARCIAL | Solo `paths-ignore` global de `docs/**`/`**/*.md`; filtros por servicio cuando haya más teams/paths (ADR de fase posterior) |
+| CODEOWNERS y branch protection | REQUIERE DECISIÓN | No hay usernames/owners conocidos en el repo; requiere cuentas de GitHub (G-security §1.7) |
+| Tests de contrato productor/consumidor | PENDIENTE | OpenAPI versionado ya existe; falta ejecutar contratos en runtime bidireccional |
 
 ## 7. Dominio de negocio (roadmap por fases)
 
@@ -102,3 +109,16 @@ imágenes → OK; smoke de imagen identity/audit → `/healthz` 200; `kubectl ku
    workspaces** (decisión válida de N §4.2 — pnpm no disponible en la máquina).
 5. `uv sync` a secas (modo exact) desinstala los miembros del workspace; instalar con
    `uv sync --all-packages` (documentado en README y CI).
+6. Vulnerabilidades npm en `next` 15.5.x (1 high en `postcss` embebido + 1 moderate):
+   el fix publicado es `next` 16.3.6 (**semver-major**); CI bloquea solo a nivel crítico
+   (`npm audit --audit-level=critical`) y el upgrade se planifica como trabajo propio.
+7. gitleaks: `tests/` está en la allowlist de `.gitleaks.toml` (fixtures no desplegables
+   como `TEST_JWT_SECRET`); cualquier fixture nuevo en `tests/` queda cubierto por esa
+   decisión y cualquier secreto real fuera de `tests/` sigue bloqueando CI.
+8. CODEOWNERS + branch protection: pendiente de decisión (no hay usernames/owners).
+9. Self-telemetry del collector no publicada: `:8888` sin mapear en compose y `:8889`
+   (exporter prometheus) queda vacío mientras ningún emisor envíe OTLP metrics; las
+   métricas de negocio `platform_*` sí llegan por scrape directo de cada servicio.
+10. Windows + `localhost` → `::1` cuesta ~2 s por conexión a puertos con publicación
+    IPv4 de Docker; todos los defaults locales ya usan `127.0.0.1` — no reintroducir
+    `localhost` en DSNs ni URLs de servicio (ver `.env.example`).

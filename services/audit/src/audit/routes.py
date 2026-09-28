@@ -11,13 +11,13 @@ from fastapi import APIRouter, Depends, Query
 from platform_contracts.audit import AuditBatchIn, AuditBatchOut, AuditPage, AuditRecordOut
 from platform_contracts.roles import BACKOFFICE_ROLES
 from platform_kernel.auth import require_roles, require_service
-from platform_kernel.clock import utcnow
 from platform_kernel.errors import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from audit.config import AuditSettings, get_audit_settings
 from audit.db import get_session
+from audit.ingest import insert_records
 from audit.models import AuditRecord
 
 router = APIRouter()
@@ -60,46 +60,7 @@ async def ingest(
     service: Annotated[str, Depends(require_service)],
 ) -> AuditBatchOut:
     """Ingesta idempotente por `event_id` (solo servicios autenticados)."""
-    existing = set(
-        (
-            await session.execute(
-                select(AuditRecord.event_id).where(AuditRecord.event_id.in_([r.event_id for r in body.records]))
-            )
-        ).scalars()
-    )
-    accepted = 0
-    duplicates = 0
-    for record in body.records:
-        if record.event_id in existing:
-            duplicates += 1
-            continue
-        session.add(
-            AuditRecord(
-                event_id=record.event_id,
-                event_type=record.event_type,
-                schema_version=record.schema_version,
-                aggregate_type=record.aggregate_type,
-                aggregate_id=record.aggregate_id,
-                action=record.action,
-                actor_type=record.actor_type,
-                actor_id=record.actor_id,
-                resource_type=record.resource_type,
-                resource_id=record.resource_id,
-                before=record.before,
-                after=record.after,
-                ip=record.ip,
-                user_agent=record.user_agent,
-                request_id=record.request_id,
-                correlation_id=record.correlation_id,
-                causation_id=record.causation_id,
-                reason=record.reason,
-                severity=record.severity,
-                payload=record.payload,
-                recorded_at=record.recorded_at or utcnow(),
-            )
-        )
-        accepted += 1
-    await session.commit()
+    accepted, duplicates = await insert_records(session, body.records)
     return AuditBatchOut(accepted=accepted, duplicates=duplicates)
 
 

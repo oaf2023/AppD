@@ -31,3 +31,4 @@ Formato: Título · Estado · Fecha · Contexto · Decisión · Consecuencias ·
 
 - Un cambio que invalide un ADR requiere un **nuevo ADR** (no editar retroactivamente el histórico) y actualización de `docs/phase0/00-decisions.md`.
 - Numeración correlativa e irreciclable: un ADR retirado conserva su número con estado `Obsoleto`.
+- Plantilla para nuevos ADRs: [TEMPLATE.md](TEMPLATE.md) (formato `ADR-NNNN — …`: Estado/Fecha/Relacionados, Contexto, Decisión, Consecuencias, Alternativas, Referencias; registrar la fila en la tabla de arriba).

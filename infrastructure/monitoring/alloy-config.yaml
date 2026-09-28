@@ -1,0 +1,48 @@
+// Grafana Alloy (perfil obs) — scrapeo de logs de contenedores del proyecto hacia Loki.
+// Requiere el socket de Docker (solo lectura) para descubrir contenedores.
+// Sintaxis River: los comentarios usan // (no #).
+
+discovery.docker "local" {
+  host             = "unix:///var/run/docker.sock"
+  refresh_interval = "5s"
+
+  filter {
+    name   = "name"
+    values = ["platform-"]
+  }
+}
+
+discovery.relabel "logs" {
+  targets = discovery.docker.local.targets
+
+  rule {
+    action        = "replace"
+    target_label  = "container"
+    regex         = "/(.*)"
+    source_labels = ["__meta_docker_container_name"]
+  }
+
+  rule {
+    action        = "replace"
+    target_label  = "service"
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+  }
+
+  rule {
+    action        = "replace"
+    target_label  = "compose_project"
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+  }
+}
+
+loki.source.docker "local" {
+  targets    = discovery.relabel.logs.output
+  host       = "unix:///var/run/docker.sock"
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

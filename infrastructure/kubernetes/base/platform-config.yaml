@@ -10,7 +10,16 @@ data:
   FLAG_LIVE_TRADING: "false" # jamás true sin licencia (ADR-0012)
   FLAG_MFA: "true"
   REQUIRE_EMAIL_VERIFICATION: "true"
-  AUDIT_SERVICE_URL: "http://audit:8083"
   IDENTITY_URL: "http://identity:8081"
   AUDIT_URL: "http://audit:8083"
   GATEWAY_URL: "http://gateway:8080"
+  # Outbox → Redpanda (ADR-0007): broker aún sin StatefulSet en Fase 1 (PLACEHOLDER,
+  # ver ADR-0020) — apuntará al broker in-cluster cuando exista.
+  REDPANDA_BOOTSTRAP_SERVERS: "redpanda:9092"
+  OUTBOX_RELAY_ENABLED: "true"
+  OUTBOX_RELAY_INTERVAL_MS: "500"
+  OUTBOX_MAX_ATTEMPTS: "5"
+  OUTBOX_BATCH_SIZE: "100"
+  EVENT_CONSUMER_ENABLED: "true"
+  # Traces OTel (ADR-0013): vacío = sin exportación hasta que exista collector in-cluster
+  OTEL_ENDPOINT: ""
