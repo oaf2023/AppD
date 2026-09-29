@@ -1,6 +1,6 @@
 # Estado de componentes — clasificación
 
-Fecha de verificación: 2026-09-28 · Fase 0 + Fase 1 (foundation)
+Fecha de verificación: 2026-09-29 · Fase 0 + Fase 1 (foundation) + F2.1 (ledger)
 Proyecto: `MonedasAR` · Fuente de verdad de decisiones: `docs/phase0/00-decisions.md`
 
 Leyenda:
@@ -67,6 +67,31 @@ pública OMV: Forex/Crypto con datos reales (Kraken 16:31 UTC), Fuente sin
 duplicados, 5 cards "Próximamente"; solo avisos preexistentes (COOP sobre HTTP
 LAN y un prefetch RSC abortado), sin errores propios.
 
+Evidencia F2.1 — servicio `ledger` (2026-09-29): servicio nuevo `services/ledger`
+(Fase 2, BUILD-017/018/021) con API interna `POST /internal/v1/postings` (201,
+`Idempotency-Key` obligatoria UUID, replay idempotente y 409 con cuerpo distinto,
+ADR-0010) y `GET /internal/v1/postings/{id}`; escritura ACID de cuentas/asientos/
+outbox en una transacción (`store.py`), validación de reglas de asiento pura
+(`postings.py`, 79 tests unit), invariante de saldo `ledger.ledger_assert_balanced`
+antes del commit, triggers append-only en transacciones/asientos (ADR-0011 §1/§2),
+evento `LedgerPosted` en outbox (`PHASE2_TOPICS`, contrato 0.3.0 con test propio),
+BD `platform_ledger` en initdb/CI y `uv run ledger` en 8085; fix de orden de INSERT
+(transacciones antes que asientos) vía `relationship()` en `LedgerEntry`, fix de
+replay idempotente (psycopg3 devuelve `rowcount=-1` en `INSERT … ON CONFLICT` sin
+`RETURNING` → detección por fila devuelta) y `OUTBOX_RELAY_ENABLED` movido de volcado
+global a fixture (el volcado global rompía la publicación de identity en e2e);
+gateway `/healthz` agrega `ledger` (4 checks) con e2e que levanta 5 servidores
+(puerto 18085); `deploy/compose.yml` con servicio `ledger` en `40005:8085`,
+`docker compose config` OK; CI con `platform_ledger` y `ledger` en build/SBOM/trivy;
+manifest k8s `ledger.yaml` (+ `LEDGER_URL`/`LEDGER_DATABASE_URL`) con
+`kubectl kustomize` OK; docs (README, deploy/README con nota de creación manual de
+`platform_ledger` en volúmenes ya inicializados, .env.example). Gates locales verdes:
+`ruff check`/`format` (166 archivos), `mypy packages services` (79 archivos),
+`check_boundaries`, `export_openapi --check` (5 specs) y `uv run pytest` →
+**180 passed (133 unit, 44 integration, 3 e2e)** contra PostgreSQL y Redpanda reales;
+`docker build -f services/ledger/Dockerfile` → imagen OK. **Pendiente**: commit/push
+(CI GitHub) y redespliegue OMV con creación previa de `platform_ledger`.
+
 ---
 
 ## 1. Núcleo y contratos
@@ -75,9 +100,9 @@ LAN y un prefetch RSC abortado), sin errores propios.
 |---|---|---|
 | `packages/platform-kernel` (config, errores RFC 9457, logging JSON, auth JWT+roles, tokens, `money` Decimal, rate limit, idempotencia, middleware request-id, métricas Prometheus, loop_factory Windows) | IMPLEMENTADO | mypy strict; tests unitarios; redacción de secretos en logs |
 | Exportación **traces OpenTelemetry** desde servicios | IMPLEMENTADO | SDK en `platform_kernel/telemetry.py` (OTLP/HTTP, instrumentación FastAPI+httpx, propagación W3C `traceparent`); activo solo con `OTEL_ENDPOINT`; E2E verificado contra Tempo (REQ-057) |
-| `packages/platform-contracts` (roles, envelope de eventos, headers internos, esquemas de audit, contrato de mercados `market_data.py`) | IMPLEMENTADO | 9 eventos del catálogo Fase 1 implementados; `MarketOverview`/`OverviewQuote` con `simulated: false` estructural (G3/X-07 bloqueado) |
-| OpenAPI por servicio (`platform-contracts/openapi/*.yaml`) + tests de contrato | PARCIAL | 4 specs canónicos exportados (`tools/export_openapi.py`, gate `--check` en CI, `test_openapi_sync`); falta test productor/consumidor en runtime |
-| `platform-contracts/CHANGELOG.md` de contratos | IMPLEMENTADO | 0.1.0/0.1.1 (Fase 1), 0.2.0 (mercados, aditivo) |
+| `packages/platform-contracts` (roles, envelope de eventos, headers internos, esquemas de audit, contrato de mercados `market_data.py`) | IMPLEMENTADO | 9 eventos del catálogo Fase 1 + `LedgerPosted` (Fase 2, `PHASE2_TOPICS`); `MarketOverview`/`OverviewQuote` con `simulated: false` estructural (G3/X-07 bloqueado) |
+| OpenAPI por servicio (`platform-contracts/openapi/*.yaml`) + tests de contrato | PARCIAL | 5 specs canónicos exportados (`tools/export_openapi.py`, gate `--check` en CI, `test_openapi_sync`); falta test productor/consumidor en runtime |
+| `platform-contracts/CHANGELOG.md` de contratos | IMPLEMENTADO | 0.1.0/0.1.1 (Fase 1), 0.2.0 (mercados, aditivo), 0.3.0 (ledger, aditivo) |
 
 ## 2. Servicios Fase 1
 
@@ -86,20 +111,26 @@ LAN y un prefetch RSC abortado), sin errores propios.
 | `identity` — registro, verificación de email, login/refresh con rotación + detección de reuso, sesiones, logout/revocación, forgot/reset, MFA TOTP (enable/disable/verify), RBAC, rate limits, outbox | IMPLEMENTADO | Suite integration + e2e verdes |
 | Envío real de email (verificación / reset) | REQUIERE PROVEEDOR | Hoy: persistido en `email_outbox` + evento; sin SMTP/provider (Fase posterior) |
 | `audit` — ingesta batch append-only, RBAC por token de servicio, dedup por `event_id`, filtros + cursor, bloqueo de UPDATE/DELETE | IMPLEMENTADO | Append-only verificado por trigger/listener |
-| `gateway` — proxy con validación JWT, headers de seguridad, request-id/correlation, rate limit, passthrough problem+json, `/healthz` agregado (identity+audit+market_data) y `/readyz` | IMPLEMENTADO | `/healthz` devuelve 503 si upstreams caídos (agregado, por diseño) |
+| `gateway` — proxy con validación JWT, headers de seguridad, request-id/correlation, rate limit, passthrough problem+json, `/healthz` agregado (identity+audit+market_data+ledger) y `/readyz` | IMPLEMENTADO | `/healthz` devuelve 503 si upstreams caídos (agregado, por diseño) |
 | `market-data` — snapshot público `GET /api/v1/market-data/overview` (Forex/Crypto de referencia con proveedores keyless: Frankfurter→ECB, Kraken→CoinGecko; cache TTL 900/60 s, circuit breaker 3 fallos→30 s, failover, regla no-ficción `stale`/`unavailable`, cero secretos) | IMPLEMENTADO (alcance overview) | Puerto 8084; ruta pública en gateway; tests unit con `httpx.MockTransport`; smoke en contenedor con datos reales. **Pendiente (F2–F3)**: ticks/velas/WS, symbol master, histórico, `get_quote`/`get_tickers` (K §0) |
 | Devices/sesiones persistentes multi-dispositivo avanzado | PENDIENTE | Tablas de sesión existentes; fingerprint de dispositivo no implementado |
+
+## 2b. Servicios Fase 2
+
+| Componente | Clasificación | Notas |
+|---|---|---|
+| `ledger` — asientos double-entry append-only: `POST /internal/v1/postings` (201, `Idempotency-Key` UUID obligatoria, replay idempotente, 409 con cuerpo distinto, ADR-0010), `GET /internal/v1/postings/{id}`, `/healthz` y `/readyz`; cuentas auto-creadas, invariante de saldo `ledger_assert_balanced` antes del commit, triggers append-only (ADR-0011), outbox `LedgerPosted`→Redpanda, relay propio | IMPLEMENTADO (alcance F2.1) | Puerto 8085, BD `platform_ledger` (migración única `0001_initial`), API interna (sin ruta pública en gateway por ahora; Q-api-map §2.6 statements/extractos sigue pendiente). Suite: 79 unit (`test_ledger_postings`) + 22 integration (`test_ledger`) + e2e (health agregado) verdes |
 
 ## 3. Datos e infraestructura
 
 | Componente | Clasificación | Notas |
 |---|---|---|
-| Compose local: PostgreSQL 17 (puerto **5433**), Redis 7, initdb con `platform_identity`/`platform_audit`/`platform_gateway` | IMPLEMENTADO | Healthy; todos los puertos de datos/obs enlazan a `127.0.0.1` (evita `localhost`→`::1`, que en Windows+Docker tarda ~2 s por conexión); psycopg exige SelectorEventLoop (mitigado en kernel + `loop_factory`) |
+| Compose local: PostgreSQL 17 (puerto **5433**), Redis 7, initdb con `platform_identity`/`platform_audit`/`platform_gateway`/`platform_ledger` | IMPLEMENTADO | Healthy; todos los puertos de datos/obs enlazan a `127.0.0.1` (evita `localhost`→`::1`, que en Windows+Docker tarda ~2 s por conexión); psycopg exige SelectorEventLoop (mitigado en kernel + `loop_factory`) |
 | Migraciones Alembic por servicio (schema propio, upgrade/downgrade) | IMPLEMENTADO | Commit explícito en `env.py` (evita autobegin); fix `path_separator` |
 | Redpanda (perfil `events`) + pipeline outbox | IMPLEMENTADO | Relay en `identity/outbox.py` (reintentos con backoff exp+jitter, DLQ `dlq.<topic>`, métricas de backlog/publicados/DLQ, migración `0002_outbox_relay`) → consumidor `audit/consumer.py` (grupo `audit-service`, commit tras insert, dedup `event_id`) |
-| Dockerfiles multi-stage non-root (gateway/identity/audit/market-data) | IMPLEMENTADO | Imágenes construidas; smoke `/healthz` 200 con migraciones en imagen; `market-data` smoke en contenedor con overview real |
+| Dockerfiles multi-stage non-root (gateway/identity/audit/market-data/ledger) | IMPLEMENTADO | Imágenes construidas; smoke `/healthz` 200 con migraciones en imagen; `market-data` smoke en contenedor con overview real; `ledger` build OK (2026-09-29) |
 | Imágenes publicadas en registry | PENDIENTE | Referenciadas en K8s como `platform/<svc>:dev` |
-| **Despliegue en servidor OMV (Docker, `192.168.1.200`, puertos 40000-40100)** | IMPLEMENTADO | `deploy/compose.yml` (+`.env.example`, `prometheus.yml`, README): web 40000, gateway 40001, identity 40002, audit 40003, market-data 40004, datos 40010-40012 (solo `127.0.0.1`), obs 40020-40024; 14 servicios definidos (core 8 + obs 6); migraciones al arrancar (`sh -c` con comando explícito); secretos generados en servidor en `deploy/.env` (no versionado); E2E verificado 2026-09-28 (registro→login→panel, outbox→Redpanda→`audit.records`, Grafana 200); redespliegue con `market-data` verificado 2026-09-28 (commit `3770cc2`, 14 contenedores, `/healthz` con `market_data: ok`, E2E de la sección Mercados en la portada) |
+| **Despliegue en servidor OMV (Docker, `192.168.1.200`, puertos 40000-40100)** | IMPLEMENTADO | `deploy/compose.yml` (+`.env.example`, `prometheus.yml`, README): web 40000, gateway 40001, identity 40002, audit 40003, market-data 40004, ledger 40005, datos 40010-40012 (solo `127.0.0.1`), obs 40020-40024; 15 servicios definidos (core 9 + obs 6); migraciones al arrancar (`sh -c` con comando explícito); secretos generados en servidor en `deploy/.env` (no versionado); E2E verificado 2026-09-28 (registro→login→panel, outbox→Redpanda→`audit.records`, Grafana 200); redespliegue con `market-data` verificado 2026-09-28 (commit `3770cc2`, 14 contenedores, `/healthz` con `market_data: ok`, E2E de la sección Mercados en la portada). **Pendiente (2026-09-29)**: redeploy con `ledger` + `CREATE DATABASE platform_ledger` manual (el volumen `pgdata` no re-ejecuta initdb) |
 | K8s base + overlay dev (kustomize, probes, securityContext, resources) | PARCIAL | `kubectl kustomize` renderiza; **NO aplicado** (Fase 1), secretos PLACEHOLDER (ADR-0020) |
 | Migraciones como init job en K8s | PENDIENTE | Hoy auto-migrate solo en entornos local/test (N §8.6) |
 
@@ -112,7 +143,7 @@ LAN y un prefetch RSC abortado), sin errores propios.
 | OTel Collector config (perfil `obs`) | IMPLEMENTADO | Pipelines: traces → Tempo, metrics → Prometheus `:8889`, logs → Loki (dormant hasta que servicios exporten logs OTel) |
 | Prometheus + Grafana + Loki + Tempo + Alloy (perfil `obs`) | IMPLEMENTADO (compose) | Datasources provisionadas por UID (`prometheus`/`loki`/`tempo`); Alloy con docker_sd filtra contenedores `platform-*` → Loki (flujo verificado: `streams=1`) |
 | Dashboard RED en Grafana + runbooks | PARCIAL | Dashboard `grafana/dashboards/red.json` provisionado (req rate, %5xx, p95, outbox backlog/DLQ); runbooks 01–03 + README; faltan reglas de alerta |
-| Atributos/propagación OTel traces extremo a extremo | IMPLEMENTADO | `init_telemetry` + `instrument_app` en los 3 servicios + `traceparent` de salida; E2E verificado: batch de spans del servicio llega al collector y Tempo responde en `/api/search` (ADR-0013, REQ-057) |
+| Atributos/propagación OTel traces extremo a extremo | IMPLEMENTADO | `init_telemetry` + `instrument_app` en los 5 servicios + `traceparent` de salida; E2E verificado: batch de spans del servicio llega al collector y Tempo responde en `/api/search` (ADR-0013, REQ-057) |
 
 ## 5. Frontend
 
@@ -134,7 +165,7 @@ LAN y un prefetch RSC abortado), sin errores propios.
 
 | Componente | Clasificación | Notas |
 |---|---|---|
-| `.github/workflows/ci.yml` | IMPLEMENTADO | 6 jobs: `quality` (ruff/format/mypy/fronteras/OpenAPI), `test` (pytest con PostgreSQL+Redpanda efímeros), `web` (lint/typecheck/build), `security` (gitleaks+pip-audit+npm audit), `supply-chain` (docker build+SBOM syft+trivy CRITICAL), `infra` (terraform/kustomize/compose); actions pinnadas por SHA; **aún no ejecutado en GitHub (requiere push)** |
+| `.github/workflows/ci.yml` | IMPLEMENTADO | 6 jobs: `quality` (ruff/format/mypy/fronteras/OpenAPI), `test` (pytest con PostgreSQL+Redpanda efímeros, 4 bases incl. `platform_ledger`), `web` (lint/typecheck/build), `security` (gitleaks+pip-audit+npm audit), `supply-chain` (docker build+SBOM syft+trivy CRITICAL, 5 imágenes incl. `ledger`), `infra` (terraform/kustomize/compose); actions pinnadas por SHA; CI 6/6 verde en GitHub (commit `3770cc2`) |
 | dependabot + secret-scan + análisis de dependencias + SBOM/CVE | IMPLEMENTADO | `.github/dependabot.yml` (pip/npm/actions/docker); gitleaks con `.gitleaks.toml`; pip-audit vía `uv export`; npm audit (bloqueo a nivel crítico); syft SBOM como artefacto; trivy CRITICAL bloquea |
 | Path filters por servicio | PARCIAL | Solo `paths-ignore` global de `docs/**`/`**/*.md`; filtros por servicio cuando haya más teams/paths (ADR de fase posterior) |
 | CODEOWNERS y branch protection | REQUIERE DECISIÓN | No hay usernames/owners conocidos en el repo; requiere cuentas de GitHub (G-security §1.7) |
@@ -144,7 +175,7 @@ LAN y un prefetch RSC abortado), sin errores propios.
 
 | Componente | Clasificación |
 |---|---|
-| Ledger double-entry, wallet, cuentas de trading (Fase 2) | PENDIENTE |
+| Ledger double-entry, wallet, cuentas de trading (Fase 2) | PARCIAL | **Adelantado 2026-09-29**: servicio `ledger` F2.1 IMPLEMENTADO (asientos double-entry append-only, idempotencia ADR-0010, outbox `LedgerPosted`); **sigue pendiente** wallet, cuentas de trading y proyecciones de extractos (Q-api-map §2.6) |
 | Market data adapters + streaming WS (Fase 3) | PARCIAL | **Adelantado 2026-09-28**: snapshot `overview` con adapters reales keyless (Frankfurter/ECB, Kraken/CoinGecko), cache, breaker y failover; **sigue pendiente** ticks/velas/WS, symbol master, histórico y feeds con redistribución (X-07) |
 | Trading OMS/EMS, posiciones, margin, risk (Fase 4) | PENDIENTE |
 | Pagos (depósitos/retiros) | REQUIERE PROVEEDOR (adapters de pago) |
@@ -159,7 +190,7 @@ LAN y un prefetch RSC abortado), sin errores propios.
 
 1. Rate limits se prueban a nivel unitario (fixtures relajan límites para la suite).
 2. `clean_dbs` dropea schemas de la base local entre sesiones de prueba (por diseño en dev).
-3. e2e usa puertos fijos 18080/18081/18083/18084 con espera de liberación; en paralelismo futuro
+3. e2e usa puertos fijos 18080/18081/18083/18084/18085 con espera de liberación; en paralelismo futuro
    habrá que parametrizar por `worker_id` (pytest-xdist).
 4. Comentario de `N-monorepo-structure.md` menciona `pnpm-lock.yaml`; el repo usa **npm
    workspaces** (decisión válida de N §4.2 — pnpm no disponible en la máquina).

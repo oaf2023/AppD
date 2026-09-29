@@ -200,6 +200,7 @@ async def _aggregate_health(request: Request, ready: bool = False) -> Response:
         ("identity", settings.identity_url),
         ("audit", settings.audit_url),
         ("market_data", settings.market_data_url),
+        ("ledger", settings.ledger_url),
     ):
         path = "/readyz" if ready else "/healthz"
         try:

@@ -13,6 +13,7 @@ hostname `sq2`, x86_64). Todos los puertos publicados caen dentro del rango
 | 40002   | identity        | LAN (0.0.0.0)| API de identidad directa (diagnóstico) |
 | 40003   | audit           | LAN (0.0.0.0)| API de auditoría directa (diagnóstico) |
 | 40004   | market-data     | LAN (0.0.0.0)| Snapshot público de mercados (`/api/v1/market-data/overview`) |
+| 40005   | ledger          | LAN (0.0.0.0)| API interna de asientos double-entry (`/internal/v1/postings`) |
 | 40010   | PostgreSQL 17   | 127.0.0.1    | datos (túnel SSH para operaciones)     |
 | 40011   | Redis 7         | 127.0.0.1    | caché/sesiones                         |
 | 40012   | Redpanda 19092  | 127.0.0.1    | Kafka externo (rpk desde el servidor)  |
@@ -39,8 +40,14 @@ docker compose -f deploy/compose.yml up -d                 # núcleo
 docker compose -f deploy/compose.yml --profile obs up -d   # + observabilidad
 ```
 
-- Las migraciones Alembic de identity y audit se ejecutan automáticamente al
+- Las migraciones Alembic de identity, audit y ledger se ejecutan automáticamente al
   arrancar sus contenedores (comando previo a `uvicorn`).
+- La base `platform_ledger` (Ledger) hay que crearla una sola vez en servidores ya
+  inicializados: el volumen `pgdata` existente no re-ejecuta `initdb/001_databases.sql`.
+  ```bash
+  docker compose -f deploy/compose.yml exec postgres \
+    psql -U platform -d platform -c "CREATE DATABASE platform_ledger;"
+  ```
 - `REQUIRE_EMAIL_VERIFICATION=false` en este entorno de demostración LAN: el
   registro crea cuentas operativas sin correo. Cambiar a `true` si se conecta SMTP.
 
@@ -48,7 +55,7 @@ docker compose -f deploy/compose.yml --profile obs up -d   # + observabilidad
 
 ```bash
 docker compose -f deploy/compose.yml ps
-docker compose -f deploy/compose.yml logs -f gateway identity audit web
+docker compose -f deploy/compose.yml logs -f gateway identity audit market-data ledger web
 docker compose -f deploy/compose.yml restart web
 docker compose -f deploy/compose.yml down        # para (los volúmenes persisten)
 ```

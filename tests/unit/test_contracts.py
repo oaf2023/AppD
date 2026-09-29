@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from platform_contracts.events import (
+    EVENT_AGGREGATE_TYPE,
     EVENT_TYPES,
+    LEDGER_POSTED,
     PHASE1_TOPICS,
+    PHASE2_TOPICS,
     SCHEMA_VERSION,
     USER_REGISTERED,
     dlq_topic,
@@ -38,6 +41,16 @@ def test_naming_de_topics_de_la_fase1() -> None:
     assert len(PHASE1_TOPICS) == 9
     assert "identity.session.revoked" in PHASE1_TOPICS
     assert all(not topic.startswith("identity.user_") for topic in PHASE1_TOPICS)
+
+
+def test_evento_ledger_posted_fase2() -> None:
+    """Catálogo P #38: `LedgerPosted` vive fuera de EVENT_TYPES/PHASE1_TOPICS (Fase 1)."""
+    assert LEDGER_POSTED == "LedgerPosted"
+    assert EVENT_AGGREGATE_TYPE[LEDGER_POSTED] == "LedgerTransaction"
+    assert PHASE2_TOPICS == ("ledger.ledger_transaction.ledger_posted",)
+    assert LEDGER_POSTED not in EVENT_TYPES
+    assert len(EVENT_TYPES) == 9
+    assert len(PHASE1_TOPICS) == 9
 
 
 def test_headers_de_identidad_no_se_confian_al_cliente() -> None:

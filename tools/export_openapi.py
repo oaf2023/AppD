@@ -23,7 +23,7 @@ from openapi_spec_validator import validate as validate_spec
 
 ROOT = Path(__file__).resolve().parent.parent
 CANONICAL_DIR = ROOT / "packages" / "platform-contracts" / "openapi"
-SERVICES = ("gateway", "identity", "audit", "market-data")
+SERVICES = ("gateway", "identity", "audit", "market-data", "ledger")
 # El nombre del directorio del servicio puede diferir del nombre del paquete Python
 MODULES = {"market-data": "market_data"}
 

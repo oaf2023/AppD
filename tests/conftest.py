@@ -34,6 +34,7 @@ def clean_dbs(pg_available: None) -> None:
     """Elimina los schemas entre ejecuciones de la suite (migraciones los recrean)."""
     _reset_database("platform_identity", ["identity"])
     _reset_database("platform_audit", ["audit"])
+    _reset_database("platform_ledger", ["ledger"])
 
 
 @pytest.fixture(scope="session")

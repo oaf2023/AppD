@@ -6,6 +6,18 @@ exige bump de versión **mayor**, entrada de deprecación con política `Sunset`
 anterior y guía de migración; los cambios aditivos (campos opcionales nuevos) usan bump menor.
 El gate de CI (`tools/export_openapi.py --check`) impide que el spec se aleje del código.
 
+## 0.3.0 — 2026-09-29
+
+### Añadido
+- OpenAPI canónico del nuevo servicio `ledger` (`openapi/ledger.yaml` y el export
+  `services/ledger/openapi.yaml`, generados con `tools/export_openapi.py`): la única
+  vía de escritura del libro mayor, `POST /internal/v1/postings` (201, `Idempotency-Key`
+  obligatorio), `GET /internal/v1/postings/{id}` y health/ready. Spec **aditivo**: no
+  modifica rutas ni esquemas de gateway/identity/audit/market-data.
+- `LEDGER_POSTED = "LedgerPosted"` (`events.py`, catálogo P #38) con agregado
+  `LedgerTransaction` y `PHASE2_TOPICS = ("ledger.ledger_transaction.ledger_posted",)`.
+  `EVENT_TYPES`/`PHASE1_TOPICS` (Fase 1, 9 tipos) quedan intactos.
+
 ## 0.2.0 — 2026-09-28
 
 ### Añadido

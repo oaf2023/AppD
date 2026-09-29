@@ -18,6 +18,9 @@ SESSION_REVOKED = "SessionRevoked"
 PASSWORD_RESET_REQUESTED = "PasswordResetRequested"
 PASSWORD_RESET_COMPLETED = "PasswordResetCompleted"
 
+# Fase 2 (catálogo P #38): publicado por `ledger` en el outbox del servicio.
+LEDGER_POSTED = "LedgerPosted"
+
 SCHEMA_VERSION = 1
 
 EVENT_TYPES: dict[str, int] = {
@@ -42,6 +45,7 @@ EVENT_AGGREGATE_TYPE: dict[str, str] = {
     SESSION_REVOKED: "Session",
     PASSWORD_RESET_REQUESTED: "User",
     PASSWORD_RESET_COMPLETED: "User",
+    LEDGER_POSTED: "LedgerTransaction",
 }
 
 
@@ -73,15 +77,20 @@ PHASE1_TOPICS: tuple[str, ...] = tuple(
     topic_for_event("identity", EVENT_AGGREGATE_TYPE[event_type], event_type) for event_type in EVENT_TYPES
 )
 
+#: Fase 2: topics nuevos de `ledger` (fuera del conteo `PHASE1_TOPICS`, ver test de contrato).
+PHASE2_TOPICS: tuple[str, ...] = (topic_for_event("ledger", EVENT_AGGREGATE_TYPE[LEDGER_POSTED], LEDGER_POSTED),)
+
 __all__ = [
     "EVENT_AGGREGATE_TYPE",
     "EVENT_TYPES",
+    "LEDGER_POSTED",
     "LOGIN_FAILED",
     "MFA_DISABLED",
     "MFA_ENABLED",
     "PASSWORD_RESET_COMPLETED",
     "PASSWORD_RESET_REQUESTED",
     "PHASE1_TOPICS",
+    "PHASE2_TOPICS",
     "SCHEMA_VERSION",
     "SESSION_REVOKED",
     "USER_EMAIL_VERIFIED",

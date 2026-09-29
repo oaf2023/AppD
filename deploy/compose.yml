@@ -6,7 +6,7 @@
 #      docker compose --profile obs up -d   (añade observabilidad)
 # Perfil obs: prometheus(40020) grafana(40021) loki(40022) tempo(40023) otel-collector(40024).
 # Nota de seguridad: los puertos de datos (40010-40012) y de obs internos se publican
-# SOLO en 127.0.0.1 del servidor; la app (40000-40004) y Grafana (40021) son de LAN.
+# SOLO en 127.0.0.1 del servidor; la app (40000-40005) y Grafana (40021) son de LAN.
 
 name: platform-omv
 
@@ -187,6 +187,7 @@ services:
       IDENTITY_URL: http://identity:8081
       AUDIT_URL: http://audit:8083
       MARKET_DATA_URL: http://market-data:8084
+      LEDGER_URL: http://ledger:8085
       CORS_ORIGINS: ${CORS_ORIGINS}
       REDIS_URL: redis://redis:6379/0
       OTEL_ENDPOINT: ${OTEL_ENDPOINT:-}
@@ -198,6 +199,8 @@ services:
       audit:
         condition: service_healthy
       market-data:
+        condition: service_healthy
+      ledger:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5)"]
@@ -220,6 +223,41 @@ services:
     depends_on:
       gateway:
         condition: service_healthy
+
+  ledger:
+    build:
+      context: ..
+      dockerfile: services/ledger/Dockerfile
+    image: platform/ledger:omv
+    restart: unless-stopped
+    command:
+      - sh
+      - -c
+      - |
+        python -c "import os; from ledger.migrate import run_migrations; run_migrations(os.environ['LEDGER_DATABASE_URL'])"
+        exec uvicorn ledger.main:app --host 0.0.0.0 --port 8085
+    environment:
+      ENVIRONMENT: production
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      JWT_SECRET: ${JWT_SECRET}
+      SERVICE_TOKEN_SECRET: ${SERVICE_TOKEN_SECRET}
+      LEDGER_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/platform_ledger
+      REDPANDA_BOOTSTRAP_SERVERS: redpanda:9092
+      OTEL_ENDPOINT: ${OTEL_ENDPOINT:-}
+      OUTBOX_RELAY_ENABLED: "true"
+    ports:
+      - "40005:8085"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8085/healthz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
 
   # ---------- perfil obs (opcional) ----------
   otel-collector:

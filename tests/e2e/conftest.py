@@ -9,8 +9,9 @@ import pytest
 PORT_IDENTITY = 18081
 PORT_AUDIT = 18083
 PORT_MARKET_DATA = 18084
+PORT_LEDGER = 18085
 PORT_GATEWAY = 18080
-ALL_PORTS = (PORT_GATEWAY, PORT_IDENTITY, PORT_AUDIT, PORT_MARKET_DATA)
+ALL_PORTS = (PORT_GATEWAY, PORT_IDENTITY, PORT_AUDIT, PORT_MARKET_DATA, PORT_LEDGER)
 
 
 async def _wait_port_free(port: int, timeout: float = 20.0) -> None:
@@ -35,6 +36,7 @@ async def servers(clean_dbs: None) -> None:  # type: ignore[no-untyped-def]
     from audit.main import create_app as create_audit
     from gateway.main import create_app as create_gateway
     from identity.main import create_app as create_identity
+    from ledger.main import create_app as create_ledger
     from market_data.main import create_app as create_market_data
 
     for port in ALL_PORTS:
@@ -44,6 +46,7 @@ async def servers(clean_dbs: None) -> None:  # type: ignore[no-untyped-def]
         (create_identity(), PORT_IDENTITY),
         (create_audit(), PORT_AUDIT),
         (create_market_data(), PORT_MARKET_DATA),
+        (create_ledger(), PORT_LEDGER),
         (create_gateway(), PORT_GATEWAY),
     ]
     running: list[tuple[uvicorn.Server, asyncio.Task[None]]] = []

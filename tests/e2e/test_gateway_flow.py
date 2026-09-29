@@ -48,7 +48,7 @@ async def test_flujo_completo_a_traves_del_gateway(servers: None) -> None:
         assert health.status_code == 200, health.text
         body = health.json()
         assert body["status"] == "ok"
-        assert body["checks"] == {"identity": "ok", "audit": "ok", "market_data": "ok"}
+        assert body["checks"] == {"identity": "ok", "audit": "ok", "market_data": "ok", "ledger": "ok"}
 
         # la documentación interna no se expone
         docs = await client.get("/docs")

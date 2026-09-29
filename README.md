@@ -37,6 +37,7 @@ uv run identity     # http://localhost:8081
 uv run gateway      # http://localhost:8080  (entrypoint; requiere identity+audit arriba)
 uv run audit        # http://localhost:8083
 uv run market-data  # http://localhost:8084  (opcional: datos reales de la sección Mercados)
+uv run ledger       # http://localhost:8085  (asientos double-entry; API interna)
 
 # 5. Frontend shell (Next.js 15)
 npm install
@@ -62,6 +63,7 @@ npm run build --workspace apps/web
 docker build -f services/identity/Dockerfile -t platform/identity:dev .
 docker build -f services/gateway/Dockerfile  -t platform/gateway:dev .
 docker build -f services/audit/Dockerfile    -t platform/audit:dev .
+docker build -f services/ledger/Dockerfile   -t platform/ledger:dev .
 ```
 
 ### Observabilidad (perfil `obs`)
@@ -80,7 +82,7 @@ docker compose -f infrastructure/compose/compose.yml --profile obs up -d
 ### Despliegue en servidor OMV (Docker)
 
 Stack completo publicado en el servidor de la LAN con **todos los puertos en el
-rango 40000–40100**: web `40000` · gateway `40001` · identity `40002` · audit `40003`
+rango 40000–40100**: web `40000` · gateway `40001` · identity `40002` · audit `40003` · market-data `40004` · ledger `40005`
 · datos `40010–40012` (solo `127.0.0.1` del servidor) · observabilidad `40020–40024`.
 
 ```bash
@@ -99,8 +101,8 @@ cd /opt/platform && docker compose -f deploy/compose.yml up -d
 | `docs/component-status.md` | Matriz de clasificación de componentes (IMPLEMENTADO/PARCIAL/…) |
 | `packages/platform-kernel/` | Núcleo Python compartido (config, errores, auth, dinero, logs, métricas) |
 | `packages/platform-contracts/` | Contratos: roles, envelope de eventos, headers, esquemas de auditoría |
-| `services/gateway` · `identity` · `audit` | Microservicios Fase 1 (uno por bounded context, schema propio) |
-| `tests/` | Suite cruzada: unit, integration (PostgreSQL real), e2e (3 servidores reales) |
+| `services/gateway` · `identity` · `audit` · `market-data` · `ledger` | Microservicios (uno por bounded context, schema propio) |
+| `tests/` | Suite cruzada: unit, integration (PostgreSQL real), e2e (5 servidores reales) |
 | `apps/web/` | Frontend shell Next.js 15 (npm workspaces, TS estricto, Tailwind 4, PWA) |
 | `infrastructure/compose/` | Stack local (postgres:5433, redis, redpanda, perfiles `events`/`obs`) |
 | `infrastructure/monitoring/` | OTel Collector, Prometheus, Loki, Tempo, Alloy y Grafana (dashboard RED) |
