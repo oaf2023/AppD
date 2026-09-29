@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: market-data
+  namespace: platform
+  labels:
+    app: market-data
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: market-data
+  template:
+    metadata:
+      labels:
+        app: market-data
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: market-data
+          image: platform/market-data:dev # PENDIENTE: publicar imagen en registry
+          ports:
+            - containerPort: 8084
+          envFrom:
+            - configMapRef:
+                name: platform-config
+            - secretRef:
+                name: platform-secrets
+          readinessProbe:
+            # /readyz es local: los proveedores externos son best-effort (failover)
+            httpGet:
+              path: /readyz
+              port: 8084
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8084
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: market-data
+  namespace: platform
+  labels:
+    app: market-data
+spec:
+  type: ClusterIP
+  selector:
+    app: market-data
+  ports:
+    - name: http
+      port: 8084
+      targetPort: 8084

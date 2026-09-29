@@ -43,6 +43,7 @@ PUBLIC_PATHS: set[tuple[str, str]] = {
     ("POST", "/api/v1/auth/refresh"),
     ("POST", "/api/v1/auth/password/forgot"),
     ("POST", "/api/v1/auth/password/reset"),
+    ("GET", "/api/v1/market-data/overview"),
     ("GET", "/healthz"),
     ("GET", "/readyz"),
     ("GET", "/metrics"),
@@ -56,11 +57,14 @@ def _target_for(path: str) -> str | None:
         return "identity"
     if path.startswith("/api/v1/audit-events"):
         return "audit"
+    if path.startswith("/api/v1/market-data/"):
+        return "market_data"
     return None
 
 
 def _base_url(target: str, settings: GatewaySettings) -> str:
-    return settings.identity_url if target == "identity" else settings.audit_url
+    urls = {"identity": settings.identity_url, "audit": settings.audit_url, "market_data": settings.market_data_url}
+    return urls[target]
 
 
 def _security_headers(response: Response) -> None:
@@ -192,7 +196,11 @@ async def _aggregate_health(request: Request, ready: bool = False) -> Response:
     settings = get_gateway_settings()
     checks: dict[str, str] = {}
     all_ok = True
-    for name, base in (("identity", settings.identity_url), ("audit", settings.audit_url)):
+    for name, base in (
+        ("identity", settings.identity_url),
+        ("audit", settings.audit_url),
+        ("market_data", settings.market_data_url),
+    ):
         path = "/readyz" if ready else "/healthz"
         try:
             r = await client.get(f"{base}{path}")

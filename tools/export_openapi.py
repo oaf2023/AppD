@@ -23,11 +23,13 @@ from openapi_spec_validator import validate as validate_spec
 
 ROOT = Path(__file__).resolve().parent.parent
 CANONICAL_DIR = ROOT / "packages" / "platform-contracts" / "openapi"
-SERVICES = ("gateway", "identity", "audit")
+SERVICES = ("gateway", "identity", "audit", "market-data")
+# El nombre del directorio del servicio puede diferir del nombre del paquete Python
+MODULES = {"market-data": "market_data"}
 
 
 def build_spec(service: str) -> dict[str, Any]:
-    module = importlib.import_module(f"{service}.main")
+    module = importlib.import_module(f"{MODULES.get(service, service)}.main")
     app = module.app
     spec: dict[str, Any] = app.openapi()
     validate_spec(spec)

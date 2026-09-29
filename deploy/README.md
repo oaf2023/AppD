@@ -12,6 +12,7 @@ hostname `sq2`, x86_64). Todos los puertos publicados caen dentro del rango
 | 40001   | gateway (FastAPI)| LAN (0.0.0.0)| API unificada `/api/v1/...`           |
 | 40002   | identity        | LAN (0.0.0.0)| API de identidad directa (diagnóstico) |
 | 40003   | audit           | LAN (0.0.0.0)| API de auditoría directa (diagnóstico) |
+| 40004   | market-data     | LAN (0.0.0.0)| Snapshot público de mercados (`/api/v1/market-data/overview`) |
 | 40010   | PostgreSQL 17   | 127.0.0.1    | datos (túnel SSH para operaciones)     |
 | 40011   | Redis 7         | 127.0.0.1    | caché/sesiones                         |
 | 40012   | Redpanda 19092  | 127.0.0.1    | Kafka externo (rpk desde el servidor)  |
@@ -60,8 +61,11 @@ Actualizar tras un nuevo código: reextraer el árbol en `/opt/platform`,
 - `deploy/.env` contiene secretos reales: **no se versiona** y no se sube a git.
 - `ENVIRONMENT=production` exige `JWT_SECRET`/`SERVICE_TOKEN_SECRET` reales
   (>=32 caracteres); el arranque falla si se detectan valores de desarrollo.
-- El acceso de administración al servidor es SSH (root); no hay telemetría ni
-  datos de terceros. La operativa real está desactivada (`flag_live_trading=false`).
+- El acceso de administración al servidor es SSH (root); no hay telemetría. La
+  única salida a terceros es `market-data` hacia APIs públicas keyless de
+  referencia (BCE/Frankfurter, Kraken/CoinGecko; sin credenciales ni datos
+  personales, ver `docs/API_INTEGRATIONS.md`). La operativa real está
+  desactivada (`flag_live_trading=false`).
 - Grafana (40021) queda autenticado con `GRAFANA_PASSWORD` del `.env`.
 
 ## Verificación tras el despliegue

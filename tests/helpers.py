@@ -28,6 +28,7 @@ os.environ.update(
         "AUDIT_DATABASE_URL": "postgresql+psycopg://platform:platform_local_dev_only@127.0.0.1:5433/platform_audit",
         "IDENTITY_URL": "http://127.0.0.1:18081",
         "AUDIT_URL": "http://127.0.0.1:18083",
+        "MARKET_DATA_URL": "http://127.0.0.1:18084",
         "FLAG_MFA": "true",
         "REQUIRE_EMAIL_VERIFICATION": "true",
         # límites generosos: el rate limit se prueba a nivel unitario

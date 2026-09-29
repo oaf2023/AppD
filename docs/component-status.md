@@ -36,6 +36,27 @@ navegador local y contra `http://192.168.1.200:40000` → registro → login →
 sobre HTTP LAN cosmético); redespliegue OMV con web+gateway+identity+audit
 reconstruidos, contenedores `healthy` y `healthz` OK.
 
+Evidencia sección Mercados + servicio `market-data` (2026-09-28): discovery de
+proveedores keyless con verificación de ToS y de endpoints en vivo
+(`docs/API_INTEGRATIONS.md`); servicio nuevo `services/market-data` con 4
+adapters (Frankfurter→ECB, Kraken→CoinGecko), cache TTL, circuit breaker y
+regla no-ficción (`stale`/`unavailable`, jamás precio inventado); contrato
+`platform_contracts/market_data.py` + spec `openapi/market-data.yaml` con gate de
+deriva; gateway con ruta pública y `/healthz` agregado (3 checks); gates
+`ruff`/`format`/`mypy`/`fronteras`/`export_openapi --check` verdes;
+`uv run pytest` → **78 passed (53 unit, 22 integration, 3 e2e)**; web
+`lint`/`typecheck`/`build` verdes; `docker build` de la imagen `market-data` →
+OK y smoke en contenedor: `/healthz` 200 y `/api/v1/market-data/overview` 200
+con datos reales (`frankfurter` y `kraken`, valores > 0); `docker compose … config`
+y `kubectl kustomize` → OK. E2E en navegador local (2026-09-28): portada
+`http://localhost:3200` con stack local (web+gateway+market-data), sección
+`#mercados` con Forex (EUR/GBP, EUR/JPY, EUR/USD con sello BCE) y Criptomonedas
+(BTC/ETH/USDT con sello UTC vía Kraken) en badge `Disponible`, 5 cards
+"Próximamente · Fases 3-4", `Fuente:` sin duplicados (fix de atribución en
+`MarketClassCard`) y **0 errores de consola / 0 peticiones fallidas**; captura en
+`/tmp` (mercados.png). CI en GitHub y redespliegue OMV: pendientes de
+push/confirmación.
+
 ---
 
 ## 1. Núcleo y contratos
@@ -44,9 +65,9 @@ reconstruidos, contenedores `healthy` y `healthz` OK.
 |---|---|---|
 | `packages/platform-kernel` (config, errores RFC 9457, logging JSON, auth JWT+roles, tokens, `money` Decimal, rate limit, idempotencia, middleware request-id, métricas Prometheus, loop_factory Windows) | IMPLEMENTADO | mypy strict; tests unitarios; redacción de secretos en logs |
 | Exportación **traces OpenTelemetry** desde servicios | IMPLEMENTADO | SDK en `platform_kernel/telemetry.py` (OTLP/HTTP, instrumentación FastAPI+httpx, propagación W3C `traceparent`); activo solo con `OTEL_ENDPOINT`; E2E verificado contra Tempo (REQ-057) |
-| `packages/platform-contracts` (roles, envelope de eventos, headers internos, esquemas de audit) | IMPLEMENTADO | 9 eventos del catálogo Fase 1 implementados |
-| OpenAPI por servicio (`platform-contracts/openapi/*.yaml`) + tests de contrato | PARCIAL | Specs canónicos exportados (`tools/export_openapi.py`, gate `--check` en CI, `test_openapi_sync`); falta test productor/consumidor en runtime |
-| `platform-contracts/CHANGELOG.md` de contratos | IMPLEMENTADO | 0.1.0 (Fase 1) |
+| `packages/platform-contracts` (roles, envelope de eventos, headers internos, esquemas de audit, contrato de mercados `market_data.py`) | IMPLEMENTADO | 9 eventos del catálogo Fase 1 implementados; `MarketOverview`/`OverviewQuote` con `simulated: false` estructural (G3/X-07 bloqueado) |
+| OpenAPI por servicio (`platform-contracts/openapi/*.yaml`) + tests de contrato | PARCIAL | 4 specs canónicos exportados (`tools/export_openapi.py`, gate `--check` en CI, `test_openapi_sync`); falta test productor/consumidor en runtime |
+| `platform-contracts/CHANGELOG.md` de contratos | IMPLEMENTADO | 0.1.0/0.1.1 (Fase 1), 0.2.0 (mercados, aditivo) |
 
 ## 2. Servicios Fase 1
 
@@ -55,7 +76,8 @@ reconstruidos, contenedores `healthy` y `healthz` OK.
 | `identity` — registro, verificación de email, login/refresh con rotación + detección de reuso, sesiones, logout/revocación, forgot/reset, MFA TOTP (enable/disable/verify), RBAC, rate limits, outbox | IMPLEMENTADO | Suite integration + e2e verdes |
 | Envío real de email (verificación / reset) | REQUIERE PROVEEDOR | Hoy: persistido en `email_outbox` + evento; sin SMTP/provider (Fase posterior) |
 | `audit` — ingesta batch append-only, RBAC por token de servicio, dedup por `event_id`, filtros + cursor, bloqueo de UPDATE/DELETE | IMPLEMENTADO | Append-only verificado por trigger/listener |
-| `gateway` — proxy con validación JWT, headers de seguridad, request-id/correlation, rate limit, passthrough problem+json, `/healthz` agregado y `/readyz` | IMPLEMENTADO | `/healthz` devuelve 503 si upstreams caídos (agregado, por diseño) |
+| `gateway` — proxy con validación JWT, headers de seguridad, request-id/correlation, rate limit, passthrough problem+json, `/healthz` agregado (identity+audit+market_data) y `/readyz` | IMPLEMENTADO | `/healthz` devuelve 503 si upstreams caídos (agregado, por diseño) |
+| `market-data` — snapshot público `GET /api/v1/market-data/overview` (Forex/Crypto de referencia con proveedores keyless: Frankfurter→ECB, Kraken→CoinGecko; cache TTL 900/60 s, circuit breaker 3 fallos→30 s, failover, regla no-ficción `stale`/`unavailable`, cero secretos) | IMPLEMENTADO (alcance overview) | Puerto 8084; ruta pública en gateway; tests unit con `httpx.MockTransport`; smoke en contenedor con datos reales. **Pendiente (F2–F3)**: ticks/velas/WS, symbol master, histórico, `get_quote`/`get_tickers` (K §0) |
 | Devices/sesiones persistentes multi-dispositivo avanzado | PENDIENTE | Tablas de sesión existentes; fingerprint de dispositivo no implementado |
 
 ## 3. Datos e infraestructura
@@ -65,9 +87,9 @@ reconstruidos, contenedores `healthy` y `healthz` OK.
 | Compose local: PostgreSQL 17 (puerto **5433**), Redis 7, initdb con `platform_identity`/`platform_audit`/`platform_gateway` | IMPLEMENTADO | Healthy; todos los puertos de datos/obs enlazan a `127.0.0.1` (evita `localhost`→`::1`, que en Windows+Docker tarda ~2 s por conexión); psycopg exige SelectorEventLoop (mitigado en kernel + `loop_factory`) |
 | Migraciones Alembic por servicio (schema propio, upgrade/downgrade) | IMPLEMENTADO | Commit explícito en `env.py` (evita autobegin); fix `path_separator` |
 | Redpanda (perfil `events`) + pipeline outbox | IMPLEMENTADO | Relay en `identity/outbox.py` (reintentos con backoff exp+jitter, DLQ `dlq.<topic>`, métricas de backlog/publicados/DLQ, migración `0002_outbox_relay`) → consumidor `audit/consumer.py` (grupo `audit-service`, commit tras insert, dedup `event_id`) |
-| Dockerfiles multi-stage non-root (gateway/identity/audit) | IMPLEMENTADO | Imágenes construidas; smoke `/healthz` 200 con migraciones en imagen |
+| Dockerfiles multi-stage non-root (gateway/identity/audit/market-data) | IMPLEMENTADO | Imágenes construidas; smoke `/healthz` 200 con migraciones en imagen; `market-data` smoke en contenedor con overview real |
 | Imágenes publicadas en registry | PENDIENTE | Referenciadas en K8s como `platform/<svc>:dev` |
-| **Despliegue en servidor OMV (Docker, `192.168.1.200`, puertos 40000-40100)** | IMPLEMENTADO | `deploy/compose.yml` (+`.env.example`, `prometheus.yml`, README): web 40000, gateway 40001, identity 40002, audit 40003, datos 40010-40012 (solo `127.0.0.1`), obs 40020-40024; 13 contenedores `healthy`; migraciones al arrancar (`sh -c` con comando explícito); secretos generados en servidor en `deploy/.env` (no versionado); E2E verificado 2026-09-28 (registro→login→panel, outbox→Redpanda→`audit.records`, Grafana 200) |
+| **Despliegue en servidor OMV (Docker, `192.168.1.200`, puertos 40000-40100)** | IMPLEMENTADO | `deploy/compose.yml` (+`.env.example`, `prometheus.yml`, README): web 40000, gateway 40001, identity 40002, audit 40003, market-data 40004, datos 40010-40012 (solo `127.0.0.1`), obs 40020-40024; 14 servicios definidos (core 8 + obs 6); migraciones al arrancar (`sh -c` con comando explícito); secretos generados en servidor en `deploy/.env` (no versionado); E2E verificado 2026-09-28 (registro→login→panel, outbox→Redpanda→`audit.records`, Grafana 200); redespliegue con `market-data` **pendiente de push/confirmación** |
 | K8s base + overlay dev (kustomize, probes, securityContext, resources) | PARCIAL | `kubectl kustomize` renderiza; **NO aplicado** (Fase 1), secretos PLACEHOLDER (ADR-0020) |
 | Migraciones como init job en K8s | PENDIENTE | Hoy auto-migrate solo en entornos local/test (N §8.6) |
 
@@ -87,7 +109,7 @@ reconstruidos, contenedores `healthy` y `healthz` OK.
 | Componente | Clasificación | Notas |
 |---|---|---|
 | `apps/web` shell Next.js 15 (App Router, TS estricto, Tailwind 4, PWA manifest, i18n `es`/`en` tipado, RTL preparado) | IMPLEMENTADO | build/lint/typecheck verdes |
-| Portada hero con acceso embebido (`AuthPanel`: pestañas Iniciar sesión/Crear cuenta reutilizando los formularios existentes; con sesión activa muestra saludo + enlace a `/panel`) + secciones ilustrativas: Mercados (7 categorías), Disponible hoy, Qué podrás hacer, Cómo empezar y aviso legal | IMPLEMENTADO | Copys i18n `es`/`en`; toda capacidad no implementada con badge "Próximamente · Fase"; sin cifras, precios ni datos de mercado inventados; E2E navegador local + OMV (`ok=true`) |
+| Portada hero con acceso embebido (`AuthPanel`: pestañas Iniciar sesión/Crear cuenta reutilizando los formularios existentes; con sesión activa muestra saludo + enlace a `/panel`) + secciones: **Mercados con datos reales de referencia** (Forex EUR→USD/GBP/JPY vía BCE y Crypto BTC/ETH/USDT vía Kraken, con `source`+`ts`+badge `stale`/`dato no disponible`; commodities/índices/acciones/ETFs con badge "Próximamente · Fase 3-4"), Disponible hoy, Qué podrás hacer, Cómo empezar y aviso legal | IMPLEMENTADO | Copys i18n `es`/`en`; capacidad no implementada con badge "Próximamente · Fase"; sin cifras ni precios inventados (regla no-ficción: último bueno `stale` o `unavailable`); fetch `GET /api/v1/market-data/overview` con timeout 12 s y degradación a badges "Próximamente" si falla; E2E navegador local OK (2026-09-28): Forex/Crypto con datos reales y 0 errores de consola |
 | Sistema de diseño (primitivas `src/components/ui/`: Button/Input/Field/Select/Checkbox/Card/Container/Badge/Spinner, tokens AA en `globals.css`, header responsive con menú móvil y `aria-current`) | IMPLEMENTADO | Contraste AA verificado (primario `brand-700` 5,9:1, foco `brand-800` 7,1:1) |
 | BFF de autenticación (`src/app/api/auth/{login,register,session,logout}` → gateway; cookies httpOnly `at` 15 min + `rt` 30 d path `/api/auth`, `SameSite=Lax`, `Secure` por `COOKIE_SECURE`) | IMPLEMENTADO | E2E verificado contra el despliegue OMV: registro 201 → login 200 → `/panel` con `/me` real |
 | Login/registro/panel de usuario (formularios con validación por campo `aria-invalid`, errores en español, contraseña ≥12 alineada al contrato, panel con datos reales de `/me`, logout) | IMPLEMENTADO | Sin datos de mercado inventados: bloques marcados "Próximamente"; MFA → aviso 409 (UI MFA `PENDIENTE`) |
@@ -113,7 +135,7 @@ reconstruidos, contenedores `healthy` y `healthz` OK.
 | Componente | Clasificación |
 |---|---|
 | Ledger double-entry, wallet, cuentas de trading (Fase 2) | PENDIENTE |
-| Market data adapters + streaming WS (Fase 3) | PENDIENTE |
+| Market data adapters + streaming WS (Fase 3) | PARCIAL | **Adelantado 2026-09-28**: snapshot `overview` con adapters reales keyless (Frankfurter/ECB, Kraken/CoinGecko), cache, breaker y failover; **sigue pendiente** ticks/velas/WS, symbol master, histórico y feeds con redistribución (X-07) |
 | Trading OMS/EMS, posiciones, margin, risk (Fase 4) | PENDIENTE |
 | Pagos (depósitos/retiros) | REQUIERE PROVEEDOR (adapters de pago) |
 | KYC/AML | REQUIERE PROVEEDOR (proveedor de verificación) + REQUIERE DECISIÓN (alcance jurisdiccional) |
@@ -127,7 +149,7 @@ reconstruidos, contenedores `healthy` y `healthz` OK.
 
 1. Rate limits se prueban a nivel unitario (fixtures relajan límites para la suite).
 2. `clean_dbs` dropea schemas de la base local entre sesiones de prueba (por diseño en dev).
-3. e2e usa puertos fijos 18080/18081/18083 con espera de liberación; en paralelismo futuro
+3. e2e usa puertos fijos 18080/18081/18083/18084 con espera de liberación; en paralelismo futuro
    habrá que parametrizar por `worker_id` (pytest-xdist).
 4. Comentario de `N-monorepo-structure.md` menciona `pnpm-lock.yaml`; el repo usa **npm
    workspaces** (decisión válida de N §4.2 — pnpm no disponible en la máquina).

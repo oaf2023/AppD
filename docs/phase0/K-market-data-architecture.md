@@ -4,7 +4,20 @@ Fecha: 2026-09-27 · Fase 0 · Estado: `IMPLEMENTADO` (documento)
 Proyecto: `MonedasAR` · Dominio: `[DOMAIN]` · Marca: `MonedasAR`
 
 > **Regla de lectura**: diseño objetivo, no afirmación de implementación ni de acceso a feeds reales. El estado por componente se declara en `W-build-now.md` y `X-blocked-to-live.md`. Complementos: `Q-api-map.md` §2.7/§3 (REST e interna), `R-websocket-map.md` §4 (topics WS), `P-event-catalog.md` (eventos de negocio), `00-decisions.md` (decisiones canónicas), `H-trading-architecture.md` (consumidor `trading`/`risk`).
-> **Afirmación explícita**: en este repositorio **no existe ningún feed de mercado contratado ni acceso a datos reales de terceros**. Todo proveedor externo figura como `REQUIERE PROVEEDOR`; toda redistribución de datos de terceros como `REQUIERE CONTRATO`. Hasta que exista evidencia en `X-blocked-to-live.md`, el único emisor de precios es el generador propio, etiquetado como simulado.
+> **Afirmación explícita (actualizada 2026-09-28)**: en este repositorio **no existe ningún feed de mercado contratado** ni credenciales de proveedor, ni datos con derechos de redistribución para trading. X-07 sigue bloqueada para ticks/streams usados por `trading`/`risk` (todo dato de mercado de Fases 3–5 sigue siendo sintético y etiquetado como simulado).
+> **Excepción informativa verificada (2026-09-28)**: `services/market-data` consume APIs **públicas keyless** de referencia — BCE vía Frankfurter (primario) y Data Portal del ECB (failover) para forex; Kraken (primario) y CoinGecko (failover) para crypto — únicamente para el snapshot **informativo** `GET /api/v1/market-data/overview` de la portada (`simulated: false`, con `source`/`ts`/`stale` y atribución obligatoria). Sin contrato ni redistribución: ver `docs/API_INTEGRATIONS.md`. Regla de no-ficción: jamás se fabrica un precio (último dato bueno con `stale=true`, o `unavailable`).
+
+## 0. Estado de implementación del servicio (2026-09-28)
+
+| Elemento | Estado | Detalle |
+|---|---|---|
+| Servicio `services/market-data` (FastAPI, puerto 8084, imagen propia, K8s/compose) | IMPLEMENTADO | `GET /healthz`, `GET /readyz`, `GET /api/v1/market-data/overview`; sin BD/colas/secretos |
+| Contratos DTO (`platform_contracts/market_data.py`: `MarketOverview`, `MarketClassOverview`, `OverviewQuote`) | IMPLEMENTADO | Spec canónico `platform-contracts/openapi/market-data.yaml` + gate de deriva en CI |
+| Protocols de adapters (§1.1 target) | PARCIAL | Hoy existe `MarketDataProvider.fetch_quotes()` (batch por clase de activo) en `market_data/domain/protocols.py`; `get_quote`/`get_tickers`/`get_market_status`, `HistoricalDataProvider` y `StreamingProvider` quedan para Fases 2–3 |
+| Cache TTL + circuit breaker + failover primario→secundario | IMPLEMENTADO | FX TTL 900 s (referencia diaria BCE), crypto TTL 60 s (límite Kraken 1 req/s); breaker 3 fallos → abierto 30 s → sonda; implementación propia sin dependencias nuevas |
+| Regla no-ficción (K §6.1) | IMPLEMENTADO | Sin fuente → `unavailable` (portada: "dato no disponible"); fuente caída → último snapshot con `stale=true` y `ts` original |
+| Gateway (`PUBLIC_PATHS`, `market_data_url`, `/healthz` agregado) | IMPLEMENTADO | Ruta pública sin JWT; tasa global del gateway aplica |
+| Streaming WS, ticks/velas, symbol master, histórico | PENDIENTE | Fases 2–3 (ver `R-websocket-map.md`, `Q-api-map.md` §2.7) |
 
 ---
 

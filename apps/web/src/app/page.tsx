@@ -2,23 +2,44 @@ import Link from "next/link";
 import { defaultLocale, getMessages } from "@/i18n/messages";
 import { Badge, Card, buttonClasses } from "@/components/ui";
 import { AuthPanel } from "@/features/auth/AuthPanel";
+import { MarketClassCard } from "@/features/markets/MarketClassCard";
 import { getSessionUser } from "@/lib/auth";
+import { getMarketOverview } from "@/lib/market";
 
 /**
  * Portada de MonedasAR (estilo broker): hero dividido con propuesta de
  * valor + acceso embebido, y secciones ilustrativas honestas de lo que la
- * plataforma podrá hacer. Sin precios, saldos, estadísticas, testimonios
- * ni afirmaciones de licencia/regulación: cada capacidad no implementada
- * lleva badge de estado visible.
+ * plataforma podrá hacer. Sin precios de mercado ficticios, saldos,
+ * estadísticas, testimonios ni afirmaciones de licencia/regulación: las
+ * cotizaciones de Forex/Crypto son reales (GET /api/v1/market-data/overview)
+ * y cada capacidad no implementada lleva badge de estado visible.
  */
 export default async function HomePage(): Promise<React.JSX.Element> {
   const messages = getMessages(defaultLocale);
   const landing = messages.landing;
-  const sessionUser = await getSessionUser();
+  const [sessionUser, overview] = await Promise.all([getSessionUser(), getMarketOverview()]);
 
-  const marketCards = [
-    { title: landing.markets.forexTitle, text: landing.markets.forexText },
-    { title: landing.markets.cryptoTitle, text: landing.markets.cryptoText },
+  const forexData = overview?.classes.find((entry) => entry.asset_class === "forex") ?? null;
+  const cryptoData = overview?.classes.find((entry) => entry.asset_class === "crypto") ?? null;
+
+  const liveMarketCards = [
+    {
+      key: "forex",
+      title: landing.markets.forexTitle,
+      text: landing.markets.forexText,
+      note: landing.marketsData.fxNote,
+      data: forexData,
+    },
+    {
+      key: "crypto",
+      title: landing.markets.cryptoTitle,
+      text: landing.markets.cryptoText,
+      note: landing.marketsData.cryptoNote,
+      data: cryptoData,
+    },
+  ];
+
+  const pendingMarketCards = [
     { title: landing.markets.stocksTitle, text: landing.markets.stocksText },
     { title: landing.markets.indicesTitle, text: landing.markets.indicesText },
     { title: landing.markets.commoditiesTitle, text: landing.markets.commoditiesText },
@@ -90,7 +111,18 @@ export default async function HomePage(): Promise<React.JSX.Element> {
         </h2>
         <p className="max-w-2xl text-ink/80">{landing.marketsText}</p>
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {marketCards.map((card) => (
+          {liveMarketCards.map((card) => (
+            <MarketClassCard
+              key={card.key}
+              title={card.title}
+              text={card.text}
+              note={card.note}
+              data={card.data}
+              messages={messages}
+              locale={defaultLocale}
+            />
+          ))}
+          {pendingMarketCards.map((card) => (
             <li key={card.title} className="rounded-xl border border-mist bg-white p-6 shadow-sm">
               <div className="flex flex-col items-start gap-2">
                 <h3 className="text-lg font-semibold text-ink">{card.title}</h3>

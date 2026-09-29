@@ -29,7 +29,7 @@ Catálogo mínimo obligatorio:
 | `accounts` | cuentas de trading, perfiles, jurisdicción | 2 |
 | `wallet` | balances multi-moneda (vista, no fuente de verdad) | 2 |
 | `ledger` | double-entry, append-only, fuente de verdad financiera | 2 |
-| `market-data` | adapters, normalización, streaming WS | 3 |
+| `market-data` | adapters, normalización, streaming WS (adelanto F1: snapshot overview keyless, 2026-09-28) | 3 |
 | `trading` | OMS, EMS, posiciones, margin, PnL | 4 |
 | `risk` | límites, circuit breakers, kill switches | 4 |
 | `payments` | depósitos/retiros vía adapters | 6 |

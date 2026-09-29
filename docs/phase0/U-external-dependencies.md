@@ -8,16 +8,18 @@ Complementa: `00-decisions.md` §10 (regla de no-ficción), `T-roadmap.md` (gate
 
 ## 1. Alcance y reglas de lectura
 
-1. **Ninguna fila de este documento implica que exista relación comercial, cuenta, credencial, contrato o licencia con alguien.** Estado real al 2026-09-27: **cero** proveedores contratados, **cero** credenciales emitidas, **cero** contratos firmados.
+1. **Ninguna fila de este documento implica que exista relación comercial, cuenta, credencial, contrato o licencia con alguien.** Estado real al 2026-09-27: **cero** proveedores contratados, **cero** credenciales emitidas, **cero** contratos firmados. *Actualización 2026-09-28*: selección **keyless** (sin credencial ni contrato) de proveedores de referencia informativa FX/Crypto, documentada en `docs/API_INTEGRATIONS.md` y §6 — no modifica lo anterior: sigue sin haber contratos, cuentas ni licencias.
 2. **Regla de no-ficción**: ante ausencia de proveedor no se inventa nada; se construye `interface + adapter + mock/sandbox + placeholder de configuración` y se documenta qué falta (`00-decisions.md` §10).
 3. **Mitigación universal de acoplamiento**: toda dependencia externa se consume **solo** a través de un adapter propio en la frontera del dominio, con **failover** (segundo proveedor o degradación controlada), timeout, circuit breaker y modo mock para desarrollo. Ningún SDK/tipo de proveedor penetra en el núcleo (`trading`, `ledger`, `risk`, `accounts`).
 4. **Definición de estados de la columna `Estado`**:
 
 | Estado | Significado |
 |---|---|
-| `NO DISPONIBLE` | No hay proveedor identificado ni contratado, ni cuenta, ni credenciales, ni contrato, ni sandbox. **Es el estado real de todas las filas de este documento.** |
+| `NO DISPONIBLE` | No hay proveedor identificado ni contratado, ni cuenta, ni credenciales, ni contrato, ni sandbox. **Es el estado real de todas las filas de §2.** |
 | `REQUIERE PROVEEDOR` | Categoría definida y adapter previsto; falta seleccionar y dar de alta al proveedor (cuenta + credenciales + sandbox). |
 | `REQUIERE CONTRATO` | Proveedor identificado en fases posteriores; falta firma comercial/legal (SLA, DPA, costos, exit clause). |
+| `SELECCIONADO (keyless)` | Proveedor identificado, documentación/ToS verificados con fecha y sin credencial necesaria; adapter **pendiente de implementación**. Alcance limitado a lo declarado en la selección (p. ej. referencia informativa, no feed de trading). Definido el 2026-09-28. |
+| `IMPLEMENTADO (keyless)` | Adapter, failover, cache y tests entregados en `services/market-data` con el alcance informativo declarado; sin credenciales ni contratos. Detalle en `docs/API_INTEGRATIONS.md`. Definido el 2026-09-28. |
 
 5. **Columna `Fase bloqueada`**: primera fase cuyo *gate* no puede cerrarse sin que la dependencia pase a estado real. En las fases anteriores la dependencia existe como `MOCK`/`PENDIENTE` declarado (nunca presentado como real).
 
@@ -79,13 +81,14 @@ Verificación periódica obligatoria: grep de patrones de secretos en CI (pre-co
 
 ## 4. Dependencias que **NO** bloquean la Fase 1–2
 
-**Ninguna.** Todo lo de Fase 1 (y el núcleo de Fase 2) es propio: monorepo, `gateway`, `identity`, `audit`, `accounts`, `wallet`, `ledger`, `market-data` simulado, `trading` demo, `risk` demo, `notification` con transporte mock, CI/CD, observabilidad y frontend PWA corren con Docker local sin ninguna cuenta externa.
+**Ninguna bloqueante.** Todo lo de Fase 1 (y el núcleo de Fase 2) es propio: monorepo, `gateway`, `identity`, `audit`, `accounts`, `wallet`, `ledger`, `market-data`, `trading` demo, `risk` demo, `notification` con transporte mock, CI/CD, observabilidad y frontend PWA corren con Docker local **sin ninguna cuenta externa** (los proveedores de `market-data` son APIs públicas keyless: sin credenciales ni registros; ver §6).
 
 | Dependencia externa típica en F1–F2 | Cómo se cubre sin proveedor | Declaración honesta |
 |---|---|---|
 | Object storage | Adapter mock local (filesystem) | `MOCK` / `REQUIERE PROVEEDOR` |
 | Secrets manager | Variables de entorno en local (cero en repo) | `MOCK` / `REQUIERE PROVEEDOR` |
-| Market data real | `SimulatedFeedAdapter` con ticks sintéticos | `MOCK` (datos etiquetados `simulated`) |
+| Market data real (ticks/velas para trading) | `SimulatedFeedAdapter` con ticks sintéticos | `MOCK` (datos etiquetados `simulated`) |
+| Precios de referencia en la portada (FX/Crypto) | APIs públicas keyless vía `services/market-data` (BCE/Frankfurter, Kraken/CoinGecko) | `IMPLEMENTADO (keyless)` — solo informativo, sin redistribución ni uso en trading |
 | Email/SMS/push | Transporte archivo/console/sink de tests | `MOCK` |
 | Pasarela de pago, KYC, screening, banco | Adapters mock con flujos deterministas | `MOCK` / `PENDIENTE` |
 | Cloud, WAF, SIEM, CA, KMS, uptime | Docker local + cert autofirmado + stack OTel local | `PENDIENTE` (Fase 8) |
@@ -118,9 +121,12 @@ Verificación periódica obligatoria: grep de patrones de secretos en CI (pre-co
 
 | Integración (categoría) | Adapter propio | Failover previsto | Última verificación | Estado |
 |---|---|---|---|---|
-| Todas las categorías de §2 | definidos en diseño | definidos en diseño | — (sin proveedor) | `NO DISPONIBLE` |
+| FX de referencia **informativa** (alcance parcial de #1: solo portada, sin operativa) | `providers/frankfurter.py` (`providers=ecb`) — implementado 2026-09-28 | `providers/ecb.py` (BCE directo, implementado) | 2026-09-28 (docs, ToS y endpoint en vivo; smoke con datos reales) | `IMPLEMENTADO (keyless)` — detalle y ToS en `docs/API_INTEGRATIONS.md` |
+| Crypto spot **informativa** (alcance parcial de #1: solo portada, sin operativa) | `providers/kraken.py` — implementado 2026-09-28 | `providers/coingecko.py` (atribución obligatoria, implementado) | 2026-09-28 (docs, ToS y endpoint en vivo; smoke con datos reales) | `IMPLEMENTADO (keyless)` — detalle y ToS en `docs/API_INTEGRATIONS.md` |
+| #1 feed completo (ticks/candles para margen, SL/TP, EMS) y #2 histórico con redistribución contractual | definidos en diseño (`K` §1) | mínimo 2 proveedores + failover <500 ms (`K` §1.2) | — (sin proveedor) | `NO DISPONIBLE` — **G3 bloqueado** |
+| Resto de categorías de §2 (#3–#27) | definidos en diseño | definidos en diseño | — (sin proveedor) | `NO DISPONIBLE` |
 
-Detalle de integraciones externas con timeouts, retries, circuit breaker y fallbacks: `docs/phase0/Q-api-map.md` y skill `api-governance`.
+Detalle de integraciones externas (endpoints, rate limits, ToS, atribución, matriz de datos y descartados): `docs/API_INTEGRATIONS.md`. Timeouts, retries, circuit breaker y fallbacks: `docs/phase0/Q-api-map.md` y skill `api-governance`.
 
 ---
 

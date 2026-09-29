@@ -10,6 +10,7 @@ resources:
   - gateway.yaml
   - identity.yaml
   - audit.yaml
+  - market-data.yaml
 labels:
   - pairs:
       app.kubernetes.io/part-of: "MonedasAR"

@@ -12,6 +12,7 @@ data:
   REQUIRE_EMAIL_VERIFICATION: "true"
   IDENTITY_URL: "http://identity:8081"
   AUDIT_URL: "http://audit:8083"
+  MARKET_DATA_URL: "http://market-data:8084"
   GATEWAY_URL: "http://gateway:8080"
   # Outbox → Redpanda (ADR-0007): broker aún sin StatefulSet en Fase 1 (PLACEHOLDER,
   # ver ADR-0020) — apuntará al broker in-cluster cuando exista.

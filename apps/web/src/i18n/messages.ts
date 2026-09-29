@@ -82,7 +82,7 @@ const es = {
     goPanel: "Ir al panel",
     marketsTitle: "Mercados",
     marketsText:
-      "Todo lo que la plataforma podrá ofrecer cuando se activen las fases de mercado. Sin precios ni operativa en esta fase.",
+      "Divisas y criptomonedas con cotizaciones de referencia en vivo. El resto de mercados se activará por fases. Nada de lo mostrado es una oferta de inversión.",
     marketsBadge: "Próximamente · Fases 3–4",
     markets: {
       forexTitle: "Forex",
@@ -99,6 +99,15 @@ const es = {
       etfsText: "Fondos que replican índices y sectores.",
       derivedTitle: "Índices derivados 24/7",
       derivedText: "Índices sintéticos disponibles las 24 horas, los 7 días.",
+    },
+    marketsData: {
+      fxNote: "Divisas frente al EUR · referencia diaria del Banco Central Europeo (~16:00 CET).",
+      cryptoNote: "Criptomonedas frente al USD · cotización de referencia.",
+      sourceLabel: "Fuente",
+      staleBadge: "Dato desactualizado",
+      staleNote: "Último dato bueno disponible; la fuente no responde.",
+      unavailableBadge: "No disponible",
+      noData: "Dato no disponible en este momento.",
     },
     availableTitle: "Disponible hoy",
     availableText: "Lo que ya puedes usar en tu cuenta de MonedasAR.",
@@ -229,7 +238,7 @@ const es = {
     foundation: "Fase 1 — foundation",
     liveFlag: "flag_live_trading=false",
     rights: "MonedasAR — Todos los derechos reservados.",
-    demoNote: "Entorno de demostración: sin operativa real ni datos de mercado.",
+    demoNote: "Entorno de demostración: sin operativa real (solo cotizaciones de referencia).",
   },
 };
 
@@ -292,7 +301,7 @@ const en: Messages = {
     goPanel: "Go to dashboard",
     marketsTitle: "Markets",
     marketsText:
-      "Everything the platform will be able to offer once the market phases are enabled. No prices or trading in this phase.",
+      "Forex and cryptocurrencies with live reference quotes. The rest of the markets will be enabled by phase. Nothing shown here is an investment offer.",
     marketsBadge: "Coming soon · Phases 3–4",
     markets: {
       forexTitle: "Forex",
@@ -309,6 +318,15 @@ const en: Messages = {
       etfsText: "Funds tracking indices and sectors.",
       derivedTitle: "Derived indices 24/7",
       derivedText: "Synthetic indices available 24 hours a day, 7 days a week.",
+    },
+    marketsData: {
+      fxNote: "Currencies vs EUR · daily reference rate from the European Central Bank (~16:00 CET).",
+      cryptoNote: "Cryptocurrencies vs USD · reference quotes.",
+      sourceLabel: "Source",
+      staleBadge: "Stale data",
+      staleNote: "Last good value available; the source is not responding.",
+      unavailableBadge: "Unavailable",
+      noData: "Data not available right now.",
     },
     availableTitle: "Available today",
     availableText: "What you can already use in your MonedasAR account.",
@@ -439,7 +457,7 @@ const en: Messages = {
     foundation: "Phase 1 — foundation",
     liveFlag: "flag_live_trading=false",
     rights: "MonedasAR — All rights reserved.",
-    demoNote: "Demo environment: no live trading or market data.",
+    demoNote: "Demo environment: no live trading (reference quotes only).",
   },
 };
 

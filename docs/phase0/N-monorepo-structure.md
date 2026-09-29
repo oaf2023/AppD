@@ -62,7 +62,7 @@ platform/
 │   ├── accounts/                 # F2: cuentas de trading, perfiles, jurisdicción
 │   ├── wallet/                   # F2: balances multi-moneda (proyección, no fuente de verdad)
 │   ├── ledger/                   # F2: double-entry append-only, fuente de verdad financiera
-│   ├── market-data/              # F3: adapters, normalización, streaming WS
+│   ├── market-data/              # F1+ (2026-09-28): snapshot overview keyless; F3: ticks, streaming WS, histórico
 │   ├── trading/                  # F4: OMS, EMS, posiciones, margin, PnL
 │   ├── risk/                     # F4: límites, circuit breakers, kill switches
 │   ├── payments/                 # F6: depósitos/retiros vía adapters

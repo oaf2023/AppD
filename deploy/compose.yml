@@ -6,7 +6,7 @@
 #      docker compose --profile obs up -d   (añade observabilidad)
 # Perfil obs: prometheus(40020) grafana(40021) loki(40022) tempo(40023) otel-collector(40024).
 # Nota de seguridad: los puertos de datos (40010-40012) y de obs internos se publican
-# SOLO en 127.0.0.1 del servidor; la app (40000-40003) y Grafana (40021) son de LAN.
+# SOLO en 127.0.0.1 del servidor; la app (40000-40004) y Grafana (40021) son de LAN.
 
 name: platform-omv
 
@@ -151,6 +151,28 @@ services:
       retries: 20
       start_period: 30s
 
+  market-data:
+    build:
+      context: ..
+      dockerfile: services/market-data/Dockerfile
+    image: platform/market-data:omv
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: production
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      JWT_SECRET: ${JWT_SECRET}
+      SERVICE_TOKEN_SECRET: ${SERVICE_TOKEN_SECRET}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      OTEL_ENDPOINT: ${OTEL_ENDPOINT:-}
+    ports:
+      - "40004:8084"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8084/healthz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
   gateway:
     build:
       context: ..
@@ -164,6 +186,7 @@ services:
       SERVICE_TOKEN_SECRET: ${SERVICE_TOKEN_SECRET}
       IDENTITY_URL: http://identity:8081
       AUDIT_URL: http://audit:8083
+      MARKET_DATA_URL: http://market-data:8084
       CORS_ORIGINS: ${CORS_ORIGINS}
       REDIS_URL: redis://redis:6379/0
       OTEL_ENDPOINT: ${OTEL_ENDPOINT:-}
@@ -173,6 +196,8 @@ services:
       identity:
         condition: service_healthy
       audit:
+        condition: service_healthy
+      market-data:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5)"]

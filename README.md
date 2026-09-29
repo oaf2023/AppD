@@ -36,6 +36,7 @@ uv run pytest
 uv run identity     # http://localhost:8081
 uv run gateway      # http://localhost:8080  (entrypoint; requiere identity+audit arriba)
 uv run audit        # http://localhost:8083
+uv run market-data  # http://localhost:8084  (opcional: datos reales de la sección Mercados)
 
 # 5. Frontend shell (Next.js 15)
 npm install

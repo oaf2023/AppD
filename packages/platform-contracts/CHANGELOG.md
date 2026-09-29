@@ -6,6 +6,17 @@ exige bump de versión **mayor**, entrada de deprecación con política `Sunset`
 anterior y guía de migración; los cambios aditivos (campos opcionales nuevos) usan bump menor.
 El gate de CI (`tools/export_openapi.py --check`) impide que el spec se aleje del código.
 
+## 0.2.0 — 2026-09-28
+
+### Añadido
+- Contrato de la vista de mercados (`market_data.py`): `MarketOverview`,
+  `MarketClassOverview` y `OverviewQuote` para `GET /api/v1/market-data/overview`
+  (Forex/Crypto informativos de proveedores keyless; ver `docs/API_INTEGRATIONS.md`).
+  `OverviewQuote.simulated` es `Literal[false]` estructural: G3 (X-07) sigue bloqueado.
+- OpenAPI canónico del nuevo servicio `market-data` (`openapi/market-data.yaml` exportado
+  desde `services/market-data`). Spec nuevo **aditivo**: no modifica rutas ni esquemas
+  de gateway/identity/audit.
+
 ## 0.1.1 — 2026-09-28
 
 ### Cambiado
