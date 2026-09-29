@@ -53,8 +53,8 @@ y `kubectl kustomize` → OK. E2E en navegador local (2026-09-28): portada
 `#mercados` con Forex (EUR/GBP, EUR/JPY, EUR/USD con sello BCE) y Criptomonedas
 (BTC/ETH/USDT con sello UTC vía Kraken) en badge `Disponible`, 5 cards
 "Próximamente · Fases 3-4", `Fuente:` sin duplicados (fix de atribución en
-`MarketClassCard`) y **0 errores de consola / 0 peticiones fallidas**; captura en
-`/tmp` (mercados.png). Commit `3770cc2` (53 archivos) → push `master` → CI en
+`MarketClassCard`) y **0 errores de consola / 0 peticiones fallidas**; captura
+PNG local `mercados.png` (temp, fuera del repo, no versionada). Commit `3770cc2` (53 archivos) → push `master` → CI en
 GitHub **6/6 jobs `success`** (lint/tipos/gates, pruebas unit+integration+e2e,
 frontend, Terraform/K8s/compose, secret-scan/vulnerabilidades, imágenes+SBOM+CVE);
 gitleaks en CI sin hallazgos. Redespliegue OMV (2026-09-28): 53 archivos
