@@ -54,8 +54,18 @@ y `kubectl kustomize` → OK. E2E en navegador local (2026-09-28): portada
 (BTC/ETH/USDT con sello UTC vía Kraken) en badge `Disponible`, 5 cards
 "Próximamente · Fases 3-4", `Fuente:` sin duplicados (fix de atribución en
 `MarketClassCard`) y **0 errores de consola / 0 peticiones fallidas**; captura en
-`/tmp` (mercados.png). CI en GitHub y redespliegue OMV: pendientes de
-push/confirmación.
+`/tmp` (mercados.png). Commit `3770cc2` (53 archivos) → push `master` → CI en
+GitHub **6/6 jobs `success`** (lint/tipos/gates, pruebas unit+integration+e2e,
+frontend, Terraform/K8s/compose, secret-scan/vulnerabilidades, imágenes+SBOM+CVE);
+gitleaks en CI sin hallazgos. Redespliegue OMV (2026-09-28): 53 archivos
+transferidos a `/opt/platform` (sin git en el servidor), `compose build` de
+`web`+`gateway`+`market-data` → OK y `up -d` → **14 contenedores** (core 8 +
+obs 6) con los 3 reconstruidos `healthy`; `curl 127.0.0.1:40001/healthz` →
+`{"status":"ok","checks":{…,"market_data":"ok"}}`, overview en `:40004` → 200 y
+portada `http://192.168.1.200:40000` → 200. E2E navegador contra la portada
+pública OMV: Forex/Crypto con datos reales (Kraken 16:31 UTC), Fuente sin
+duplicados, 5 cards "Próximamente"; solo avisos preexistentes (COOP sobre HTTP
+LAN y un prefetch RSC abortado), sin errores propios.
 
 ---
 
@@ -89,7 +99,7 @@ push/confirmación.
 | Redpanda (perfil `events`) + pipeline outbox | IMPLEMENTADO | Relay en `identity/outbox.py` (reintentos con backoff exp+jitter, DLQ `dlq.<topic>`, métricas de backlog/publicados/DLQ, migración `0002_outbox_relay`) → consumidor `audit/consumer.py` (grupo `audit-service`, commit tras insert, dedup `event_id`) |
 | Dockerfiles multi-stage non-root (gateway/identity/audit/market-data) | IMPLEMENTADO | Imágenes construidas; smoke `/healthz` 200 con migraciones en imagen; `market-data` smoke en contenedor con overview real |
 | Imágenes publicadas en registry | PENDIENTE | Referenciadas en K8s como `platform/<svc>:dev` |
-| **Despliegue en servidor OMV (Docker, `192.168.1.200`, puertos 40000-40100)** | IMPLEMENTADO | `deploy/compose.yml` (+`.env.example`, `prometheus.yml`, README): web 40000, gateway 40001, identity 40002, audit 40003, market-data 40004, datos 40010-40012 (solo `127.0.0.1`), obs 40020-40024; 14 servicios definidos (core 8 + obs 6); migraciones al arrancar (`sh -c` con comando explícito); secretos generados en servidor en `deploy/.env` (no versionado); E2E verificado 2026-09-28 (registro→login→panel, outbox→Redpanda→`audit.records`, Grafana 200); redespliegue con `market-data` **pendiente de push/confirmación** |
+| **Despliegue en servidor OMV (Docker, `192.168.1.200`, puertos 40000-40100)** | IMPLEMENTADO | `deploy/compose.yml` (+`.env.example`, `prometheus.yml`, README): web 40000, gateway 40001, identity 40002, audit 40003, market-data 40004, datos 40010-40012 (solo `127.0.0.1`), obs 40020-40024; 14 servicios definidos (core 8 + obs 6); migraciones al arrancar (`sh -c` con comando explícito); secretos generados en servidor en `deploy/.env` (no versionado); E2E verificado 2026-09-28 (registro→login→panel, outbox→Redpanda→`audit.records`, Grafana 200); redespliegue con `market-data` verificado 2026-09-28 (commit `3770cc2`, 14 contenedores, `/healthz` con `market_data: ok`, E2E de la sección Mercados en la portada) |
 | K8s base + overlay dev (kustomize, probes, securityContext, resources) | PARCIAL | `kubectl kustomize` renderiza; **NO aplicado** (Fase 1), secretos PLACEHOLDER (ADR-0020) |
 | Migraciones como init job en K8s | PENDIENTE | Hoy auto-migrate solo en entornos local/test (N §8.6) |
 
