@@ -55,7 +55,7 @@ Verificados en código Fase 1: §3 (auth/sesiones/rate-limit), §4 (RBAC base), 
 ## 5. Riesgos residuales explícitos (revisar antes de Fase 4)
 
 1. Sin WAF/anti-DDoS: el gateway es la única barrera de borde → `REQUIERE PROVEEDOR`.
-2. Secret-scan/SBOM/CVE-gate están en CI pero **el workflow aún no se ha ejecutado en GitHub** (requiere push); verificar la primera ejecución antes de confiar en el gate → prioridad alta.
+2. Secret-scan/SBOM/CVE-gate **ejecutados en GitHub Actions** (jobs `security` y `supply-chain` en cada push; CI 6/6 `success` verificado, último cierre commit `7e72200`, 2026-09-30); queda pendiente el gate de revisión de renovación de actions/dependencias (dependabot abre PRs sin review obligatoria) → `PENDIENTE`.
 3. Traces OTel E2E verificados y dashboards RED provisionados; **sin reglas de alerta** (nunca alerta sin runbook) → detección de T5/T6 aún manual → `PENDIENTE`.
 4. Sin mTLS ni segmentación real: movimiento lateral contenido solo por red Docker local → `PENDIENTE` (K8s).
 5. Secretos locales en `.env` dependen de la higiene del puesto → riesgo aceptado y documentado (ADR-0020).

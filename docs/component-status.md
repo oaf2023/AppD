@@ -164,6 +164,23 @@ Gates locales verdes: `ruff check`/`format`, `mypy packages services`,
 `check_boundaries`, `export_openapi --check` (7 specs) y `uv run pytest` →
 **229 passed (134 unit, 90 integration, 5 e2e)** contra PostgreSQL y Redpanda reales;
 `docker build -f services/wallet/Dockerfile` → imagen OK.
+Cierre (2026-09-30): commit `7e72200` → push `master` → CI GitHub **6/6 jobs
+`success`** → redespliegue OMV verificado (17 contenedores `healthy`,
+`40001/healthz` con **6 checks** — identity/audit/market_data/ledger/accounts/wallet
+todos `ok` — y `40007/healthz` wallet ok; `CREATE DATABASE platform_wallet` manual
+previa en el volumen `pgdata` ya inicializado; imágenes
+`platform/{wallet,gateway,ledger,accounts}:omv` reconstruidas en el servidor) →
+E2E contra el despliegue OMV **15/15 checks PASS**: registro 201 (jurisdicción
+`AR`) → login 200 → demo auto-provisionada (`type=demo`, `active`, USD) →
+`GET /api/v1/wallet/balances` con `available=10000`, `stale=false` en 2 s (cadena
+`ledger_posted` → wallet) → `GET /api/v1/ledger/statements` (1 mes, un asiento,
+`closing=10000`) → `entries`/`transactions` con el depósito (`delta=10000`,
+`direction=C`, `tx_type=deposit`) → `conversion-rates` (`data=[]`, `source=none`,
+`as_of=null`) → `POST …/close` **409** (saldo no cero) → `POST …/reload-demo`
+**202** `scheduled` (`previous_balance=10000`, `new_balance=10000`, `event_id`
+emitido) → `POST /api/v1/wallet/transfers` sin `Idempotency-Key` **400** y a
+destino inexistente **404** (BOLA) → relectura de balances post-recarga coherente
+(`available=10000`, `stale=false`).
 
 ---
 
@@ -210,7 +227,10 @@ Gates locales verdes: `ruff check`/`format`, `mypy packages services`,
 manual); redespliegue F2.2 verificado 2026-09-30 (commit `4b1cf8c`, 16 contenedores
 `healthy`, `/healthz` con 5 checks, `40006/healthz` accounts ok, E2E
 registro→demo auto-provisionada→409 y backfill 5/5; `CREATE DATABASE platform_accounts`
-manual) |
+manual); redespliegue F2.3 verificado 2026-09-30 (commit `7e72200`, 17 contenedores
+`healthy`, `/healthz` con **6 checks**, `40007/healthz` wallet ok; E2E 15/15:
+registro→demo→wallet `10000`→extractos→close 409→reload 202→transfers 400/404;
+`CREATE DATABASE platform_wallet` manual) |
 | K8s base + overlay dev (kustomize, probes, securityContext, resources) | PARCIAL | `kubectl kustomize` renderiza; **NO aplicado** (Fase 1), secretos PLACEHOLDER (ADR-0020) |
 | Migraciones como init job en K8s | PENDIENTE | Hoy auto-migrate solo en entornos local/test (N §8.6) |
 
@@ -245,7 +265,7 @@ manual) |
 
 | Componente | Clasificación | Notas |
 |---|---|---|
-| `.github/workflows/ci.yml` | IMPLEMENTADO | 6 jobs: `quality` (ruff/format/mypy/fronteras/OpenAPI), `test` (pytest con PostgreSQL+Redpanda efímeros, 6 bases incl. `platform_wallet`), `web` (lint/typecheck/build), `security` (gitleaks+pip-audit+npm audit), `supply-chain` (docker build+SBOM syft+trivy CRITICAL, 7 imágenes incl. `wallet`), `infra` (terraform/kustomize/compose); actions pinnadas por SHA; CI 6/6 verde en GitHub (último cierre: commit `4b1cf8c`, F2.2) |
+| `.github/workflows/ci.yml` | IMPLEMENTADO | 6 jobs: `quality` (ruff/format/mypy/fronteras/OpenAPI), `test` (pytest con PostgreSQL+Redpanda efímeros, 6 bases incl. `platform_wallet`), `web` (lint/typecheck/build), `security` (gitleaks+pip-audit+npm audit), `supply-chain` (docker build+SBOM syft+trivy CRITICAL, 7 imágenes incl. `wallet`), `infra` (terraform/kustomize/compose); actions pinnadas por SHA; CI 6/6 verde en GitHub (último cierre: commit `7e72200`, F2.3) |
 | dependabot + secret-scan + análisis de dependencias + SBOM/CVE | IMPLEMENTADO | `.github/dependabot.yml` (pip/npm/actions/docker); gitleaks con `.gitleaks.toml`; pip-audit vía `uv export`; npm audit (bloqueo a nivel crítico); syft SBOM como artefacto; trivy CRITICAL bloquea |
 | Path filters por servicio | PARCIAL | Solo `paths-ignore` global de `docs/**`/`**/*.md`; filtros por servicio cuando haya más teams/paths (ADR de fase posterior) |
 | CODEOWNERS y branch protection | REQUIERE DECISIÓN | No hay usernames/owners conocidos en el repo; requiere cuentas de GitHub (G-security §1.7) |
