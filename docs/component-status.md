@@ -122,9 +122,15 @@ Tests nuevos: 12 integration (`test_accounts`) + 3 internal en identity +
 e2e de auto-provisión vía gateway. Gates locales verdes: `ruff check`/`format`
 (121 archivos), `mypy packages services` (93 archivos), `check_boundaries`,
 `export_openapi --check` (6 specs) y `uv run pytest` → **197 passed (134 unit,
-59 integration, 4 e2e)** contra PostgreSQL y Redpanda reales. **Pendiente**:
-commit/push (CI GitHub) y redespliegue OMV con creación previa de
-`platform_accounts`.
+59 integration, 4 e2e)** contra PostgreSQL y Redpanda reales;
+`docker build -f services/accounts/Dockerfile` → imagen OK. Cierre (2026-09-30):
+commit `4b1cf8c` (53 archivos) → push `master` → CI GitHub **6/6 jobs `success`** →
+redespliegue OMV verificado (16 contenedores `healthy`, `40001/healthz` con **5 checks**,
+`40006/healthz` accounts ok; E2E contra el despliegue: registro 201 → login →
+`GET /api/v1/accounts` devuelve la demo auto-provisionada → `POST` manual **409**;
+backfill del consumidor: 5 usuarios → 5 cuentas demo; outbox sin publicar = 0;
+audit con 5 `AccountCreated` + 5 `DemoAccountCreated`; `CREATE DATABASE platform_accounts`
+manual previa en el volumen `pgdata` ya inicializado).
 
 ---
 
@@ -165,7 +171,12 @@ commit/push (CI GitHub) y redespliegue OMV con creación previa de
 | Redpanda (perfil `events`) + pipeline outbox | IMPLEMENTADO | Relay en `identity/outbox.py` (reintentos con backoff exp+jitter, DLQ `dlq.<topic>`, métricas de backlog/publicados/DLQ, migración `0002_outbox_relay`) → consumidor `audit/consumer.py` (grupo `audit-service`, commit tras insert, dedup `event_id`) |
 | Dockerfiles multi-stage non-root (gateway/identity/audit/market-data/ledger/accounts) | IMPLEMENTADO | Imágenes construidas; smoke `/healthz` 200 con migraciones en imagen; `market-data` smoke en contenedor con overview real; `ledger` build OK (2026-09-29); `accounts` build OK (2026-09-30) |
 | Imágenes publicadas en registry | PENDIENTE | Referenciadas en K8s como `platform/<svc>:dev` |
-| **Despliegue en servidor OMV (Docker, `192.168.1.200`, puertos 40000-40100)** | IMPLEMENTADO | `deploy/compose.yml` (+`.env.example`, `prometheus.yml`, README): web 40000, gateway 40001, identity 40002, audit 40003, market-data 40004, ledger 40005, accounts 40006, datos 40010-40012 (solo `127.0.0.1`), obs 40020-40024; 16 servicios definidos (core 10 + obs 6); migraciones al arrancar (`sh -c` con comando explícito); secretos generados en servidor en `deploy/.env` (no versionado); E2E verificado 2026-09-28 (registro→login→panel, outbox→Redpanda→`audit.records`, Grafana 200); redespliegue `market-data` verificado 2026-09-28 (commit `3770cc2`, 14 contenedores, `/healthz` con `market_data: ok`); redespliegue F2.1 verificado 2026-09-30 (commit `2514840`, 15 contenedores `healthy`, `/healthz` con 4 checks, `40005/healthz` ledger ok; `CREATE DATABASE platform_ledger` manual). **Pendiente (2026-09-30)**: redespliegue F2.2 con `accounts` + `CREATE DATABASE platform_accounts` manual (el volumen `pgdata` no re-ejecuta initdb) |
+| **Despliegue en servidor OMV (Docker, `192.168.1.200`, puertos 40000-40100)** | IMPLEMENTADO | `deploy/compose.yml` (+`.env.example`, `prometheus.yml`, README): web 40000, gateway 40001, identity 40002, audit 40003, market-data 40004, ledger 40005, accounts 40006, datos 40010-40012 (solo `127.0.0.1`), obs 40020-40024; 16 servicios definidos (core 10 + obs 6); migraciones al arrancar (`sh -c` con comando explícito); secretos generados en servidor en `deploy/.env` (no versionado); E2E verificado 2026-09-28 (registro→login→panel, outbox→Redpanda→`audit.records`, Grafana 200); redespliegue `market-data` verificado 2026-09-28 (commit `3770cc2`, 14 contenedores, `/healthz` con `market_data: ok`); redespliegue F2.1 verificado 2026-09-30 (commit `2514840`, 15 contenedores `healthy`,
+`/healthz` con 4 checks, `40005/healthz` ledger ok; `CREATE DATABASE platform_ledger`
+manual); redespliegue F2.2 verificado 2026-09-30 (commit `4b1cf8c`, 16 contenedores
+`healthy`, `/healthz` con 5 checks, `40006/healthz` accounts ok, E2E
+registro→demo auto-provisionada→409 y backfill 5/5; `CREATE DATABASE platform_accounts`
+manual) |
 | K8s base + overlay dev (kustomize, probes, securityContext, resources) | PARCIAL | `kubectl kustomize` renderiza; **NO aplicado** (Fase 1), secretos PLACEHOLDER (ADR-0020) |
 | Migraciones como init job en K8s | PENDIENTE | Hoy auto-migrate solo en entornos local/test (N §8.6) |
 
@@ -200,7 +211,7 @@ commit/push (CI GitHub) y redespliegue OMV con creación previa de
 
 | Componente | Clasificación | Notas |
 |---|---|---|
-| `.github/workflows/ci.yml` | IMPLEMENTADO | 6 jobs: `quality` (ruff/format/mypy/fronteras/OpenAPI), `test` (pytest con PostgreSQL+Redpanda efímeros, 5 bases incl. `platform_accounts`), `web` (lint/typecheck/build), `security` (gitleaks+pip-audit+npm audit), `supply-chain` (docker build+SBOM syft+trivy CRITICAL, 6 imágenes incl. `accounts`), `infra` (terraform/kustomize/compose); actions pinnadas por SHA; CI 6/6 verde en GitHub (último cierre de F2.1: commit `2514840`) |
+| `.github/workflows/ci.yml` | IMPLEMENTADO | 6 jobs: `quality` (ruff/format/mypy/fronteras/OpenAPI), `test` (pytest con PostgreSQL+Redpanda efímeros, 5 bases incl. `platform_accounts`), `web` (lint/typecheck/build), `security` (gitleaks+pip-audit+npm audit), `supply-chain` (docker build+SBOM syft+trivy CRITICAL, 6 imágenes incl. `accounts`), `infra` (terraform/kustomize/compose); actions pinnadas por SHA; CI 6/6 verde en GitHub (último cierre: commit `4b1cf8c`, F2.2) |
 | dependabot + secret-scan + análisis de dependencias + SBOM/CVE | IMPLEMENTADO | `.github/dependabot.yml` (pip/npm/actions/docker); gitleaks con `.gitleaks.toml`; pip-audit vía `uv export`; npm audit (bloqueo a nivel crítico); syft SBOM como artefacto; trivy CRITICAL bloquea |
 | Path filters por servicio | PARCIAL | Solo `paths-ignore` global de `docs/**`/`**/*.md`; filtros por servicio cuando haya más teams/paths (ADR de fase posterior) |
 | CODEOWNERS y branch protection | REQUIERE DECISIÓN | No hay usernames/owners conocidos en el repo; requiere cuentas de GitHub (G-security §1.7) |
