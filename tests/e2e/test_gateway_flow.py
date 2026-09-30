@@ -48,7 +48,13 @@ async def test_flujo_completo_a_traves_del_gateway(servers: None) -> None:
         assert health.status_code == 200, health.text
         body = health.json()
         assert body["status"] == "ok"
-        assert body["checks"] == {"identity": "ok", "audit": "ok", "market_data": "ok", "ledger": "ok"}
+        assert body["checks"] == {
+            "identity": "ok",
+            "audit": "ok",
+            "market_data": "ok",
+            "ledger": "ok",
+            "accounts": "ok",
+        }
 
         # la documentación interna no se expone
         docs = await client.get("/docs")
@@ -118,6 +124,86 @@ async def test_flujo_completo_a_traves_del_gateway(servers: None) -> None:
         {"UserRegistered", "UserEmailVerified", "UserLoggedIn"},
     )
     assert {"UserRegistered", "UserEmailVerified", "UserLoggedIn"}.issubset(found), found
+
+
+async def _wait_for_demo_account(client: httpx.AsyncClient, headers: dict[str, str], timeout: float = 30.0):  # type: ignore[no-untyped-def]
+    """Espera a que el consumidor de accounts auto-provisione la demo (BUILD-020)."""
+    loop = asyncio.get_event_loop()
+    deadline = loop.time() + timeout
+    while loop.time() < deadline:
+        response = await client.get("/api/v1/accounts", headers=headers)
+        assert response.status_code == 200, response.text
+        data = response.json()["data"]
+        if data:
+            return data[0]
+        await asyncio.sleep(0.5)
+    return None
+
+
+async def test_registro_auto_provisiona_cuenta_demo(servers: None) -> None:
+    """UserRegistered → accounts crea la demo; segunda creación manual → 409."""
+    if not redpanda_reachable():
+        pytest.skip("Redpanda no disponible: se omite la auto-provisión e2e")
+
+    async with httpx.AsyncClient(base_url=GATEWAY, timeout=30.0) as client:
+        email = unique_email()
+        register = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": email,
+                "password": TEST_PASSWORD,
+                "jurisdiction": "ES",
+                "accept_terms": True,
+            },
+            headers={"Idempotency-Key": f"e2e-{uuid.uuid4().hex}"},
+        )
+        assert register.status_code == 201, register.text
+        verify = await client.post(
+            "/api/v1/auth/verify-email", json={"token": register.json()["dev_verification_token"]}
+        )
+        assert verify.status_code == 200, verify.text
+        login = await client.post("/api/v1/auth/login", json={"email": email, "password": TEST_PASSWORD})
+        assert login.status_code == 200, login.text
+        auth = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+        account = await _wait_for_demo_account(client, auth)
+        assert account is not None, "accounts no auto-provisionó la cuenta demo tras el registro"
+        assert account["type"] == "demo"
+        assert account["status"] == "active"
+        assert account["jurisdiction"] == "ES"
+        assert account["currency"] == "USD"
+
+        # una sola demo por usuario (BUILD-020): la creación manual devuelve 409
+        manual = await client.post("/api/v1/accounts", json={}, headers={**auth, "Idempotency-Key": str(uuid.uuid4())})
+        assert manual.status_code == 409, manual.text
+        assert manual.json()["type"] == "urn:platform:error:conflict"
+
+        # BOLA (§1.7.3): otro usuario no puede leer esta cuenta
+        other_email = unique_email()
+        other_register = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": other_email,
+                "password": TEST_PASSWORD,
+                "jurisdiction": "ES",
+                "accept_terms": True,
+            },
+            headers={"Idempotency-Key": f"e2e-{uuid.uuid4().hex}"},
+        )
+        assert other_register.status_code == 201, other_register.text
+        other_verify = await client.post(
+            "/api/v1/auth/verify-email",
+            json={"token": other_register.json()["dev_verification_token"]},
+        )
+        assert other_verify.status_code == 200, other_verify.text
+        other_login = await client.post("/api/v1/auth/login", json={"email": other_email, "password": TEST_PASSWORD})
+        assert other_login.status_code == 200, other_login.text
+        foreign = await client.get(
+            f"/api/v1/accounts/{account['account_id']}",
+            headers={"Authorization": f"Bearer {other_login.json()['access_token']}"},
+        )
+        assert foreign.status_code == 404
+        assert foreign.json()["type"] == "urn:platform:error:not-found"
 
 
 async def test_gateway_devuelve_404_en_ruta_desconocida(servers: None) -> None:

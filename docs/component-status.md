@@ -1,6 +1,6 @@
 # Estado de componentes — clasificación
 
-Fecha de verificación: 2026-09-29 · Fase 0 + Fase 1 (foundation) + F2.1 (ledger)
+Fecha de verificación: 2026-09-30 · Fase 0 + Fase 1 (foundation) + F2.1 (ledger) + F2.2 (accounts)
 Proyecto: `MonedasAR` · Fuente de verdad de decisiones: `docs/phase0/00-decisions.md`
 
 Leyenda:
@@ -89,8 +89,42 @@ manifest k8s `ledger.yaml` (+ `LEDGER_URL`/`LEDGER_DATABASE_URL`) con
 `ruff check`/`format` (166 archivos), `mypy packages services` (79 archivos),
 `check_boundaries`, `export_openapi --check` (5 specs) y `uv run pytest` →
 **180 passed (133 unit, 44 integration, 3 e2e)** contra PostgreSQL y Redpanda reales;
-`docker build -f services/ledger/Dockerfile` → imagen OK. **Pendiente**: commit/push
-(CI GitHub) y redespliegue OMV con creación previa de `platform_ledger`.
+`docker build -f services/ledger/Dockerfile` → imagen OK. Cierre (2026-09-30):
+commit `2514840` → push `master` → CI GitHub **6/6 jobs `success`** → redespliegue
+OMV verificado (15 contenedores `healthy`, `40001/healthz` con 4 checks, `40005/healthz`
+ledger ok), working tree limpio.
+
+Evidencia F2.2 — servicio `accounts` (2026-09-30): servicio nuevo `services/accounts`
+(Fase 2, BUILD-017/020/023, Q-api-map §2.4) con API pública `GET/POST /api/v1/accounts`
+(cursor opaco §1.4, `Idempotency-Key` UUID obligatoria §1.8 con replay y 409 con cuerpo
+distinto, header `Location`+`Idempotent-Replay`), `GET/PATCH /api/v1/accounts/{id}`
+(BOLA §1.7.3: recurso ajeno e inexistente → 404 idéntico; PATCH ajusta alias) y API
+interna `GET /internal/v1/accounts/{id}` con JWT de servicio (§3); gating tipado:
+`live` → 403 `live-not-enabled` (BUILD-020, KYC+flag en F6), matriz `jurisdictions`
+vacía por defecto con fila `blocked` → 403 `jurisdiction-blocked` (BUILD-023), una
+sola demo por usuario vía índice único parcial (409); auto-provisión desde
+`identity.user.registered` (consumidor `accounts-service`, handler idempotente por
+índice, payload inválido → commit+log+skip) con jurisdicción del propio evento;
+endpoint interno de identity `GET /internal/v1/users/{id}` (perfil mínimo sin email,
+`require_service`) usado como seam por `resolve_jurisdiction` (cliente HTTP
+inyectable `app.state.identity_client` para tests); contratos 0.4.0 con
+`AccountCreated`/`DemoAccountCreated` (`EVENT_TYPES_PHASE2`, `PHASE2_TOPICS` ×3) y
+`TradingAccount`; audit consume `PHASE1_TOPICS + PHASE2_TOPICS`; gateway con
+`accounts_url`, ruta `/api/v1/accounts` y `/healthz` con **5 checks**; BD
+`platform_accounts` (schema `accounts`: `trading_accounts`/`jurisdictions`/
+`outbox_events`) en initdb/CI/compose/k8s (`accounts.yaml`, `ACCOUNTS_URL`/
+`ACCOUNTS_DATABASE_URL`), `deploy/compose.yml` con servicio `accounts` en
+`40006:8086`; deudas documentadas: step-up MFA inexistente en F1 (cierre de cuenta
+`POST …/close` diferido a F2.3), recarga de demo sin endpoint, sin `profiles`/
+`account_limits` (F4), `leverage` nullable null (BUILD-037), backfill del consumidor
+con `auto_offset_reset=earliest` (usuarios históricos reciben demo al arrancar).
+Tests nuevos: 12 integration (`test_accounts`) + 3 internal en identity +
+e2e de auto-provisión vía gateway. Gates locales verdes: `ruff check`/`format`
+(121 archivos), `mypy packages services` (93 archivos), `check_boundaries`,
+`export_openapi --check` (6 specs) y `uv run pytest` → **197 passed (134 unit,
+59 integration, 4 e2e)** contra PostgreSQL y Redpanda reales. **Pendiente**:
+commit/push (CI GitHub) y redespliegue OMV con creación previa de
+`platform_accounts`.
 
 ---
 
@@ -100,9 +134,9 @@ manifest k8s `ledger.yaml` (+ `LEDGER_URL`/`LEDGER_DATABASE_URL`) con
 |---|---|---|
 | `packages/platform-kernel` (config, errores RFC 9457, logging JSON, auth JWT+roles, tokens, `money` Decimal, rate limit, idempotencia, middleware request-id, métricas Prometheus, loop_factory Windows) | IMPLEMENTADO | mypy strict; tests unitarios; redacción de secretos en logs |
 | Exportación **traces OpenTelemetry** desde servicios | IMPLEMENTADO | SDK en `platform_kernel/telemetry.py` (OTLP/HTTP, instrumentación FastAPI+httpx, propagación W3C `traceparent`); activo solo con `OTEL_ENDPOINT`; E2E verificado contra Tempo (REQ-057) |
-| `packages/platform-contracts` (roles, envelope de eventos, headers internos, esquemas de audit, contrato de mercados `market_data.py`) | IMPLEMENTADO | 9 eventos del catálogo Fase 1 + `LedgerPosted` (Fase 2, `PHASE2_TOPICS`); `MarketOverview`/`OverviewQuote` con `simulated: false` estructural (G3/X-07 bloqueado) |
-| OpenAPI por servicio (`platform-contracts/openapi/*.yaml`) + tests de contrato | PARCIAL | 5 specs canónicos exportados (`tools/export_openapi.py`, gate `--check` en CI, `test_openapi_sync`); falta test productor/consumidor en runtime |
-| `platform-contracts/CHANGELOG.md` de contratos | IMPLEMENTADO | 0.1.0/0.1.1 (Fase 1), 0.2.0 (mercados, aditivo), 0.3.0 (ledger, aditivo) |
+| `packages/platform-contracts` (roles, envelope de eventos, headers internos, esquemas de audit, contrato de mercados `market_data.py`) | IMPLEMENTADO | 9 eventos del catálogo Fase 1 + `LedgerPosted`/`AccountCreated`/`DemoAccountCreated` (Fase 2, `EVENT_TYPES_PHASE2`/`PHASE2_TOPICS`); `MarketOverview`/`OverviewQuote` con `simulated: false` estructural (G3/X-07 bloqueado) |
+| OpenAPI por servicio (`platform-contracts/openapi/*.yaml`) + tests de contrato | PARCIAL | 6 specs canónicos exportados (`tools/export_openapi.py`, gate `--check` en CI, `test_openapi_sync`); falta test productor/consumidor en runtime |
+| `platform-contracts/CHANGELOG.md` de contratos | IMPLEMENTADO | 0.1.0/0.1.1 (Fase 1), 0.2.0 (mercados, aditivo), 0.3.0 (ledger, aditivo), 0.4.0 (cuentas, aditivo) |
 
 ## 2. Servicios Fase 1
 
@@ -111,7 +145,7 @@ manifest k8s `ledger.yaml` (+ `LEDGER_URL`/`LEDGER_DATABASE_URL`) con
 | `identity` — registro, verificación de email, login/refresh con rotación + detección de reuso, sesiones, logout/revocación, forgot/reset, MFA TOTP (enable/disable/verify), RBAC, rate limits, outbox | IMPLEMENTADO | Suite integration + e2e verdes |
 | Envío real de email (verificación / reset) | REQUIERE PROVEEDOR | Hoy: persistido en `email_outbox` + evento; sin SMTP/provider (Fase posterior) |
 | `audit` — ingesta batch append-only, RBAC por token de servicio, dedup por `event_id`, filtros + cursor, bloqueo de UPDATE/DELETE | IMPLEMENTADO | Append-only verificado por trigger/listener |
-| `gateway` — proxy con validación JWT, headers de seguridad, request-id/correlation, rate limit, passthrough problem+json, `/healthz` agregado (identity+audit+market_data+ledger) y `/readyz` | IMPLEMENTADO | `/healthz` devuelve 503 si upstreams caídos (agregado, por diseño) |
+| `gateway` — proxy con validación JWT, headers de seguridad, request-id/correlation, rate limit, passthrough problem+json, `/healthz` agregado (identity+audit+market_data+ledger+accounts) y `/readyz` | IMPLEMENTADO | `/healthz` devuelve 503 si upstreams caídos (agregado, por diseño) |
 | `market-data` — snapshot público `GET /api/v1/market-data/overview` (Forex/Crypto de referencia con proveedores keyless: Frankfurter→ECB, Kraken→CoinGecko; cache TTL 900/60 s, circuit breaker 3 fallos→30 s, failover, regla no-ficción `stale`/`unavailable`, cero secretos) | IMPLEMENTADO (alcance overview) | Puerto 8084; ruta pública en gateway; tests unit con `httpx.MockTransport`; smoke en contenedor con datos reales. **Pendiente (F2–F3)**: ticks/velas/WS, symbol master, histórico, `get_quote`/`get_tickers` (K §0) |
 | Devices/sesiones persistentes multi-dispositivo avanzado | PENDIENTE | Tablas de sesión existentes; fingerprint de dispositivo no implementado |
 
@@ -120,17 +154,18 @@ manifest k8s `ledger.yaml` (+ `LEDGER_URL`/`LEDGER_DATABASE_URL`) con
 | Componente | Clasificación | Notas |
 |---|---|---|
 | `ledger` — asientos double-entry append-only: `POST /internal/v1/postings` (201, `Idempotency-Key` UUID obligatoria, replay idempotente, 409 con cuerpo distinto, ADR-0010), `GET /internal/v1/postings/{id}`, `/healthz` y `/readyz`; cuentas auto-creadas, invariante de saldo `ledger_assert_balanced` antes del commit, triggers append-only (ADR-0011), outbox `LedgerPosted`→Redpanda, relay propio | IMPLEMENTADO (alcance F2.1) | Puerto 8085, BD `platform_ledger` (migración única `0001_initial`), API interna (sin ruta pública en gateway por ahora; Q-api-map §2.6 statements/extractos sigue pendiente). Suite: 79 unit (`test_ledger_postings`) + 22 integration (`test_ledger`) + e2e (health agregado) verdes |
+| `accounts` — cuentas de trading: `GET/POST /api/v1/accounts` (cursor opaco §1.4, `Idempotency-Key` UUID obligatoria §1.8 con replay/409, `Location`+`Idempotent-Replay`), `GET/PATCH /api/v1/accounts/{id}` (alias; BOLA §1.7.3 404 idéntico), `GET /internal/v1/accounts/{id}` (JWT de servicio, §3); gating: `live`→403 `live-not-enabled` (BUILD-020), matriz `jurisdictions` `blocked`→403 tipado (BUILD-023), una demo por usuario (índice único parcial→409); auto-provisión desde `identity.user.registered` (consumidor idempotente); outbox `AccountCreated`+`DemoAccountCreated` | IMPLEMENTADO (alcance F2.2) | Puerto 8086, BD `platform_accounts` (schema `accounts`: `trading_accounts`/`jurisdictions`/`outbox_events`, migración `0001_initial`), ruta pública en gateway `/api/v1/accounts`; `resolve_jurisdiction` consulta el endpoint interno de identity (seam `app.state.identity_client` para tests). Sin step-up MFA (F1 no lo tiene; cierre de cuenta diferido a F2.3), sin recarga de demo, sin `profiles`/`account_limits` (F4). Suite: 12 integration (`test_accounts`) + 3 internal en identity + e2e auto-provisión verdes |
 
 ## 3. Datos e infraestructura
 
 | Componente | Clasificación | Notas |
 |---|---|---|
-| Compose local: PostgreSQL 17 (puerto **5433**), Redis 7, initdb con `platform_identity`/`platform_audit`/`platform_gateway`/`platform_ledger` | IMPLEMENTADO | Healthy; todos los puertos de datos/obs enlazan a `127.0.0.1` (evita `localhost`→`::1`, que en Windows+Docker tarda ~2 s por conexión); psycopg exige SelectorEventLoop (mitigado en kernel + `loop_factory`) |
+| Compose local: PostgreSQL 17 (puerto **5433**), Redis 7, initdb con `platform_identity`/`platform_audit`/`platform_gateway`/`platform_ledger`/`platform_accounts` | IMPLEMENTADO | Healthy; todos los puertos de datos/obs enlazan a `127.0.0.1` (evita `localhost`→`::1`, que en Windows+Docker tarda ~2 s por conexión); psycopg exige SelectorEventLoop (mitigado en kernel + `loop_factory`); en volúmenes previos a F2.2 crear `platform_accounts` a mano (initdb no re-ejecuta) |
 | Migraciones Alembic por servicio (schema propio, upgrade/downgrade) | IMPLEMENTADO | Commit explícito en `env.py` (evita autobegin); fix `path_separator` |
 | Redpanda (perfil `events`) + pipeline outbox | IMPLEMENTADO | Relay en `identity/outbox.py` (reintentos con backoff exp+jitter, DLQ `dlq.<topic>`, métricas de backlog/publicados/DLQ, migración `0002_outbox_relay`) → consumidor `audit/consumer.py` (grupo `audit-service`, commit tras insert, dedup `event_id`) |
-| Dockerfiles multi-stage non-root (gateway/identity/audit/market-data/ledger) | IMPLEMENTADO | Imágenes construidas; smoke `/healthz` 200 con migraciones en imagen; `market-data` smoke en contenedor con overview real; `ledger` build OK (2026-09-29) |
+| Dockerfiles multi-stage non-root (gateway/identity/audit/market-data/ledger/accounts) | IMPLEMENTADO | Imágenes construidas; smoke `/healthz` 200 con migraciones en imagen; `market-data` smoke en contenedor con overview real; `ledger` build OK (2026-09-29); `accounts` build OK (2026-09-30) |
 | Imágenes publicadas en registry | PENDIENTE | Referenciadas en K8s como `platform/<svc>:dev` |
-| **Despliegue en servidor OMV (Docker, `192.168.1.200`, puertos 40000-40100)** | IMPLEMENTADO | `deploy/compose.yml` (+`.env.example`, `prometheus.yml`, README): web 40000, gateway 40001, identity 40002, audit 40003, market-data 40004, ledger 40005, datos 40010-40012 (solo `127.0.0.1`), obs 40020-40024; 15 servicios definidos (core 9 + obs 6); migraciones al arrancar (`sh -c` con comando explícito); secretos generados en servidor en `deploy/.env` (no versionado); E2E verificado 2026-09-28 (registro→login→panel, outbox→Redpanda→`audit.records`, Grafana 200); redespliegue con `market-data` verificado 2026-09-28 (commit `3770cc2`, 14 contenedores, `/healthz` con `market_data: ok`, E2E de la sección Mercados en la portada). **Pendiente (2026-09-29)**: redeploy con `ledger` + `CREATE DATABASE platform_ledger` manual (el volumen `pgdata` no re-ejecuta initdb) |
+| **Despliegue en servidor OMV (Docker, `192.168.1.200`, puertos 40000-40100)** | IMPLEMENTADO | `deploy/compose.yml` (+`.env.example`, `prometheus.yml`, README): web 40000, gateway 40001, identity 40002, audit 40003, market-data 40004, ledger 40005, accounts 40006, datos 40010-40012 (solo `127.0.0.1`), obs 40020-40024; 16 servicios definidos (core 10 + obs 6); migraciones al arrancar (`sh -c` con comando explícito); secretos generados en servidor en `deploy/.env` (no versionado); E2E verificado 2026-09-28 (registro→login→panel, outbox→Redpanda→`audit.records`, Grafana 200); redespliegue `market-data` verificado 2026-09-28 (commit `3770cc2`, 14 contenedores, `/healthz` con `market_data: ok`); redespliegue F2.1 verificado 2026-09-30 (commit `2514840`, 15 contenedores `healthy`, `/healthz` con 4 checks, `40005/healthz` ledger ok; `CREATE DATABASE platform_ledger` manual). **Pendiente (2026-09-30)**: redespliegue F2.2 con `accounts` + `CREATE DATABASE platform_accounts` manual (el volumen `pgdata` no re-ejecuta initdb) |
 | K8s base + overlay dev (kustomize, probes, securityContext, resources) | PARCIAL | `kubectl kustomize` renderiza; **NO aplicado** (Fase 1), secretos PLACEHOLDER (ADR-0020) |
 | Migraciones como init job en K8s | PENDIENTE | Hoy auto-migrate solo en entornos local/test (N §8.6) |
 
@@ -143,7 +178,7 @@ manifest k8s `ledger.yaml` (+ `LEDGER_URL`/`LEDGER_DATABASE_URL`) con
 | OTel Collector config (perfil `obs`) | IMPLEMENTADO | Pipelines: traces → Tempo, metrics → Prometheus `:8889`, logs → Loki (dormant hasta que servicios exporten logs OTel) |
 | Prometheus + Grafana + Loki + Tempo + Alloy (perfil `obs`) | IMPLEMENTADO (compose) | Datasources provisionadas por UID (`prometheus`/`loki`/`tempo`); Alloy con docker_sd filtra contenedores `platform-*` → Loki (flujo verificado: `streams=1`) |
 | Dashboard RED en Grafana + runbooks | PARCIAL | Dashboard `grafana/dashboards/red.json` provisionado (req rate, %5xx, p95, outbox backlog/DLQ); runbooks 01–03 + README; faltan reglas de alerta |
-| Atributos/propagación OTel traces extremo a extremo | IMPLEMENTADO | `init_telemetry` + `instrument_app` en los 5 servicios + `traceparent` de salida; E2E verificado: batch de spans del servicio llega al collector y Tempo responde en `/api/search` (ADR-0013, REQ-057) |
+| Atributos/propagación OTel traces extremo a extremo | IMPLEMENTADO | `init_telemetry` + `instrument_app` en los 6 servicios + `traceparent` de salida; E2E verificado: batch de spans del servicio llega al collector y Tempo responde en `/api/search` (ADR-0013, REQ-057) |
 
 ## 5. Frontend
 
@@ -165,7 +200,7 @@ manifest k8s `ledger.yaml` (+ `LEDGER_URL`/`LEDGER_DATABASE_URL`) con
 
 | Componente | Clasificación | Notas |
 |---|---|---|
-| `.github/workflows/ci.yml` | IMPLEMENTADO | 6 jobs: `quality` (ruff/format/mypy/fronteras/OpenAPI), `test` (pytest con PostgreSQL+Redpanda efímeros, 4 bases incl. `platform_ledger`), `web` (lint/typecheck/build), `security` (gitleaks+pip-audit+npm audit), `supply-chain` (docker build+SBOM syft+trivy CRITICAL, 5 imágenes incl. `ledger`), `infra` (terraform/kustomize/compose); actions pinnadas por SHA; CI 6/6 verde en GitHub (commit `3770cc2`) |
+| `.github/workflows/ci.yml` | IMPLEMENTADO | 6 jobs: `quality` (ruff/format/mypy/fronteras/OpenAPI), `test` (pytest con PostgreSQL+Redpanda efímeros, 5 bases incl. `platform_accounts`), `web` (lint/typecheck/build), `security` (gitleaks+pip-audit+npm audit), `supply-chain` (docker build+SBOM syft+trivy CRITICAL, 6 imágenes incl. `accounts`), `infra` (terraform/kustomize/compose); actions pinnadas por SHA; CI 6/6 verde en GitHub (último cierre de F2.1: commit `2514840`) |
 | dependabot + secret-scan + análisis de dependencias + SBOM/CVE | IMPLEMENTADO | `.github/dependabot.yml` (pip/npm/actions/docker); gitleaks con `.gitleaks.toml`; pip-audit vía `uv export`; npm audit (bloqueo a nivel crítico); syft SBOM como artefacto; trivy CRITICAL bloquea |
 | Path filters por servicio | PARCIAL | Solo `paths-ignore` global de `docs/**`/`**/*.md`; filtros por servicio cuando haya más teams/paths (ADR de fase posterior) |
 | CODEOWNERS y branch protection | REQUIERE DECISIÓN | No hay usernames/owners conocidos en el repo; requiere cuentas de GitHub (G-security §1.7) |
@@ -175,7 +210,7 @@ manifest k8s `ledger.yaml` (+ `LEDGER_URL`/`LEDGER_DATABASE_URL`) con
 
 | Componente | Clasificación |
 |---|---|
-| Ledger double-entry, wallet, cuentas de trading (Fase 2) | PARCIAL | **Adelantado 2026-09-29**: servicio `ledger` F2.1 IMPLEMENTADO (asientos double-entry append-only, idempotencia ADR-0010, outbox `LedgerPosted`); **sigue pendiente** wallet, cuentas de trading y proyecciones de extractos (Q-api-map §2.6) |
+| Ledger double-entry, wallet, cuentas de trading (Fase 2) | PARCIAL | **F2.1 ledger IMPLEMENTADO 2026-09-29** (asientos double-entry append-only, idempotencia ADR-0010, outbox `LedgerPosted`); **F2.2 accounts IMPLEMENTADO 2026-09-30** (cuentas demo/live con gating, cursor, auto-provisión, matriz de jurisdicciones); **sigue pendiente** wallet, proyecciones de extractos (Q-api-map §2.6), cierre de cuenta y recarga de demo (F2.3) |
 | Market data adapters + streaming WS (Fase 3) | PARCIAL | **Adelantado 2026-09-28**: snapshot `overview` con adapters reales keyless (Frankfurter/ECB, Kraken/CoinGecko), cache, breaker y failover; **sigue pendiente** ticks/velas/WS, symbol master, histórico y feeds con redistribución (X-07) |
 | Trading OMS/EMS, posiciones, margin, risk (Fase 4) | PENDIENTE |
 | Pagos (depósitos/retiros) | REQUIERE PROVEEDOR (adapters de pago) |
@@ -190,7 +225,7 @@ manifest k8s `ledger.yaml` (+ `LEDGER_URL`/`LEDGER_DATABASE_URL`) con
 
 1. Rate limits se prueban a nivel unitario (fixtures relajan límites para la suite).
 2. `clean_dbs` dropea schemas de la base local entre sesiones de prueba (por diseño en dev).
-3. e2e usa puertos fijos 18080/18081/18083/18084/18085 con espera de liberación; en paralelismo futuro
+3. e2e usa puertos fijos 18080/18081/18083/18084/18085/18086 con espera de liberación; en paralelismo futuro
    habrá que parametrizar por `worker_id` (pytest-xdist).
 4. Comentario de `N-monorepo-structure.md` menciona `pnpm-lock.yaml`; el repo usa **npm
    workspaces** (decisión válida de N §4.2 — pnpm no disponible en la máquina).

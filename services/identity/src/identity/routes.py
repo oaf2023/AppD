@@ -7,8 +7,8 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, Request, Response
 from platform_contracts.roles import BACKOFFICE_ROLES
-from platform_kernel.auth import AuthContext, require_roles, require_user
-from platform_kernel.errors import UnauthorizedError
+from platform_kernel.auth import AuthContext, require_roles, require_service, require_user
+from platform_kernel.errors import NotFoundError, UnauthorizedError
 from platform_kernel.idempotency import idempotent_execute
 from platform_kernel.ratelimit import RateLimiter, enforce
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +31,7 @@ from identity.schemas import (
     ResetPasswordIn,
     SessionOut,
     TokenPairOut,
+    UserInternalOut,
     UserOut,
     VerifyEmailIn,
 )
@@ -328,6 +329,34 @@ async def admin_list_users(
 ) -> list[UserOut]:
     svc = _service(session, settings)
     return await svc.admin_list_users()
+
+
+# ------------------------------------------------------------------- interno
+
+
+@router.get(
+    "/internal/v1/users/{user_id}",
+    response_model=UserInternalOut,
+    tags=["internal"],
+    summary="Perfil mínimo para servicios internos (Q-api-map §3)",
+)
+async def get_user_internal(
+    user_id: uuid.UUID,
+    session: SessionDep,
+    service: Annotated[str, Depends(require_service)],
+) -> UserInternalOut:
+    """Solo JWT de servicio (accounts/kyc/admin); 404 si el usuario no existe."""
+    from identity.models import User
+
+    user = await session.get(User, user_id)
+    if user is None:
+        raise NotFoundError("usuario")
+    return UserInternalOut(
+        user_id=user.id,
+        status=user.status,
+        jurisdiction=user.jurisdiction,
+        email_verified=user.email_verified_at is not None,
+    )
 
 
 __all__ = ["router"]

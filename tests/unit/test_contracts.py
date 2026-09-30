@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from platform_contracts.events import (
+    ACCOUNT_CREATED,
+    DEMO_ACCOUNT_CREATED,
     EVENT_AGGREGATE_TYPE,
     EVENT_TYPES,
+    EVENT_TYPES_PHASE2,
     LEDGER_POSTED,
     PHASE1_TOPICS,
     PHASE2_TOPICS,
@@ -47,10 +50,27 @@ def test_evento_ledger_posted_fase2() -> None:
     """Catálogo P #38: `LedgerPosted` vive fuera de EVENT_TYPES/PHASE1_TOPICS (Fase 1)."""
     assert LEDGER_POSTED == "LedgerPosted"
     assert EVENT_AGGREGATE_TYPE[LEDGER_POSTED] == "LedgerTransaction"
-    assert PHASE2_TOPICS == ("ledger.ledger_transaction.ledger_posted",)
     assert LEDGER_POSTED not in EVENT_TYPES
+    assert LEDGER_POSTED in EVENT_TYPES_PHASE2
     assert len(EVENT_TYPES) == 9
     assert len(PHASE1_TOPICS) == 9
+
+
+def test_eventos_de_cuentas_fase2() -> None:
+    """Catálogo P #12/#16: `AccountCreated`/`DemoAccountCreated` del servicio accounts."""
+    assert ACCOUNT_CREATED == "AccountCreated"
+    assert DEMO_ACCOUNT_CREATED == "DemoAccountCreated"
+    assert EVENT_AGGREGATE_TYPE[ACCOUNT_CREATED] == "TradingAccount"
+    assert EVENT_AGGREGATE_TYPE[DEMO_ACCOUNT_CREATED] == "TradingAccount"
+    assert EVENT_TYPES_PHASE2[ACCOUNT_CREATED] == EVENT_TYPES_PHASE2[DEMO_ACCOUNT_CREATED] == SCHEMA_VERSION == 1
+    assert ACCOUNT_CREATED not in EVENT_TYPES
+    assert DEMO_ACCOUNT_CREATED not in EVENT_TYPES
+    assert PHASE2_TOPICS == (
+        "ledger.ledger_transaction.ledger_posted",
+        "accounts.trading_account.account_created",
+        "accounts.trading_account.demo_account_created",
+    )
+    assert len(PHASE2_TOPICS) == 3
 
 
 def test_headers_de_identidad_no_se_confian_al_cliente() -> None:

@@ -1,4 +1,4 @@
-"""conftest de pruebas e2e: Identity, Audit, Market Data y Gateway como servidores reales."""
+"""conftest de pruebas e2e: Identity, Audit, Market Data, Ledger, Accounts y Gateway como servidores reales."""
 
 from __future__ import annotations
 
@@ -10,8 +10,9 @@ PORT_IDENTITY = 18081
 PORT_AUDIT = 18083
 PORT_MARKET_DATA = 18084
 PORT_LEDGER = 18085
+PORT_ACCOUNTS = 18086
 PORT_GATEWAY = 18080
-ALL_PORTS = (PORT_GATEWAY, PORT_IDENTITY, PORT_AUDIT, PORT_MARKET_DATA, PORT_LEDGER)
+ALL_PORTS = (PORT_GATEWAY, PORT_IDENTITY, PORT_AUDIT, PORT_MARKET_DATA, PORT_LEDGER, PORT_ACCOUNTS)
 
 
 async def _wait_port_free(port: int, timeout: float = 20.0) -> None:
@@ -33,6 +34,7 @@ async def servers(clean_dbs: None) -> None:  # type: ignore[no-untyped-def]
     import contextlib
 
     import uvicorn
+    from accounts.main import create_app as create_accounts
     from audit.main import create_app as create_audit
     from gateway.main import create_app as create_gateway
     from identity.main import create_app as create_identity
@@ -47,6 +49,7 @@ async def servers(clean_dbs: None) -> None:  # type: ignore[no-untyped-def]
         (create_audit(), PORT_AUDIT),
         (create_market_data(), PORT_MARKET_DATA),
         (create_ledger(), PORT_LEDGER),
+        (create_accounts(), PORT_ACCOUNTS),
         (create_gateway(), PORT_GATEWAY),
     ]
     running: list[tuple[uvicorn.Server, asyncio.Task[None]]] = []

@@ -17,6 +17,7 @@ class GatewaySettings(KernelSettings):
     audit_url: str = "http://127.0.0.1:8083"
     market_data_url: str = "http://127.0.0.1:8084"
     ledger_url: str = "http://127.0.0.1:8085"
+    accounts_url: str = "http://127.0.0.1:8086"
 
     rate_limit_global_per_minute: int = 120
     rate_limit_auth_per_minute: int = 30

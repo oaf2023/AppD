@@ -12,6 +12,7 @@ resources:
   - audit.yaml
   - market-data.yaml
   - ledger.yaml
+  - accounts.yaml
 labels:
   - pairs:
       app.kubernetes.io/part-of: "MonedasAR"

@@ -1,7 +1,7 @@
 # W — Build Now (construible inmediatamente sin proveedor, licencia ni contrato externo)
 
 Fecha: 2026-09-27 · Fase: 0 → objetivo 1–2 · Flag: `live_trading=false` (inmutable en este horizonte)
-Regla: todo lo aquí listado es implementable con código propio + open-source + mocks. Nada requiere proveedor/licencia. Lo que sí lo requiere está en "No construible ahora" y en `X-blocked-to-live.md`. Estados: `PENDIENTE` (no iniciado, construible ya).
+Regla: todo lo aquí listado es implementable con código propio + open-source + mocks. Nada requiere proveedor/licencia. Lo que sí lo requiere está en "No construible ahora" y en `X-blocked-to-live.md`. Estados: `PENDIENTE` (no iniciado, construible ya) · `IMPLEMENTADO`/`PARCIAL` (progreso real en `docs/component-status.md`).
 
 ## 1. Foundation / Monorepo / DevOps (Fase 1)
 
@@ -30,6 +30,12 @@ Regla: todo lo aquí listado es implementable con código propio + open-source +
 | BUILD-016 | Versionado `/v1` + OpenAPI publicado + política `Sunset` | Solo contratos propios | OpenAPI validado en CI; breaking exige major | 1 |
 
 ## 3. Dinero base: accounts / wallet / ledger (Fase 2)
+
+> Estado (2026-09-30, detalle en `docs/component-status.md`): **BUILD-018** (ledger) F2.1
+> `IMPLEMENTADO`; **BUILD-020** (cuentas demo auto-aprovisionadas; recarga de demo pendiente)
+> y **BUILD-023** (matriz de jurisdicciones) F2.2 `IMPLEMENTADO`; **BUILD-017** `PARCIAL`
+> (schemas `accounts`/`ledger`; `wallet` pendiente), **BUILD-022** `PARCIAL` (cursor del
+> historial de cuentas; multi-moneda pendiente); **BUILD-019**/**BUILD-021** `PENDIENTES`.
 
 | ID | Funcionalidad | Por qué es construible ya | Entregable esperado | Fase |
 |---|---|---|---|---|

@@ -1,0 +1,417 @@
+components:
+  schemas:
+    AccountCreateIn:
+      description: 'POST /api/v1/accounts — solo `demo` se acepta en F2 (LIVE: BUILD-020/§2.4).'
+      properties:
+        alias:
+          anyOf:
+          - maxLength: 64
+            type: string
+          - type: 'null'
+          title: Alias
+        currency:
+          anyOf:
+          - maxLength: 3
+            pattern: ^[A-Z]{3}$
+            type: string
+          - type: 'null'
+          title: Currency
+        mode:
+          default: demo
+          enum:
+          - demo
+          - live
+          title: Mode
+          type: string
+      title: AccountCreateIn
+      type: object
+    AccountOut:
+      properties:
+        account_id:
+          format: uuid
+          title: Account Id
+          type: string
+        alias:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Alias
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        currency:
+          title: Currency
+          type: string
+        jurisdiction:
+          title: Jurisdiction
+          type: string
+        leverage:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Leverage
+        status:
+          enum:
+          - active
+          - suspended
+          - closed
+          title: Status
+          type: string
+        type:
+          enum:
+          - demo
+          - live
+          title: Type
+          type: string
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+        user_id:
+          format: uuid
+          title: User Id
+          type: string
+      required:
+      - account_id
+      - user_id
+      - type
+      - currency
+      - jurisdiction
+      - status
+      - created_at
+      - updated_at
+      title: AccountOut
+      type: object
+    AccountPageOut:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/AccountOut'
+          title: Data
+          type: array
+        page:
+          $ref: '#/components/schemas/PageInfo'
+      required:
+      - data
+      - page
+      title: AccountPageOut
+      type: object
+    AccountPatchIn:
+      description: 'PATCH /api/v1/accounts/{id} — ajustes permitidos (§2.4): alias.'
+      properties:
+        alias:
+          anyOf:
+          - maxLength: 64
+            type: string
+          - type: 'null'
+          title: Alias
+      title: AccountPatchIn
+      type: object
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          title: Detail
+          type: array
+      title: HTTPValidationError
+      type: object
+    HealthOut:
+      properties:
+        service:
+          default: accounts
+          title: Service
+          type: string
+        status:
+          default: ok
+          title: Status
+          type: string
+      title: HealthOut
+      type: object
+    PageInfo:
+      description: 'Q-api-map §1.4: cursor sobre `(created_at DESC, id DESC)`; sin
+        offset.'
+      properties:
+        has_more:
+          default: false
+          title: Has More
+          type: boolean
+        limit:
+          default: 25
+          title: Limit
+          type: integer
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Next Cursor
+        prev_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Prev Cursor
+      title: PageInfo
+      type: object
+    ReadyOut:
+      properties:
+        status:
+          default: ready
+          title: Status
+          type: string
+      title: ReadyOut
+      type: object
+    ValidationError:
+      properties:
+        ctx:
+          title: Context
+          type: object
+        input:
+          title: Input
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          title: Location
+          type: array
+        msg:
+          title: Message
+          type: string
+        type:
+          title: Error Type
+          type: string
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+      type: object
+info:
+  title: MonedasAR Accounts Service
+  version: 0.1.0
+openapi: 3.1.0
+paths:
+  /api/v1/accounts:
+    get:
+      operationId: list_accounts_api_v1_accounts_get
+      parameters:
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 25
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cursor
+      - in: query
+        name: status
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - active
+            - suspended
+            - closed
+            type: string
+          - type: 'null'
+          title: Status
+      - in: query
+        name: currency
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 3
+            pattern: ^[A-Z]{3}$
+            type: string
+          - type: 'null'
+          title: Currency
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountPageOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Lista las cuentas de trading propias (cursor, §1.4)
+      tags:
+      - accounts
+    post:
+      description: 'Crea la cuenta y sus eventos `AccountCreated`/`DemoAccountCreated`.
+
+
+        Requiere sesión de usuario y `Idempotency-Key` (ausente o no UUID → `400`).
+
+        El replay devuelve la misma respuesta con `Idempotent-Replay: true`.
+
+        Step-up MFA: mecanismo aún no disponible en Fase 1 (deuda documentada).'
+      operationId: create_account_api_v1_accounts_post
+      parameters:
+      - description: 'Obligatorio: UUIDv7 por operación lógica (Q-api-map §1.8).'
+        in: header
+        name: Idempotency-Key
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: 'Obligatorio: UUIDv7 por operación lógica (Q-api-map §1.8).'
+          title: Idempotency-Key
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountCreateIn'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Crea una cuenta (DEMO; LIVE requiere KYC + flag, BUILD-020)
+      tags:
+      - accounts
+  /api/v1/accounts/{account_id}:
+    get:
+      description: Recurso ajeno o inexistente → misma respuesta `404` (§1.7.3, BOLA).
+      operationId: get_account_api_v1_accounts__account_id__get
+      parameters:
+      - in: path
+        name: account_id
+        required: true
+        schema:
+          format: uuid
+          title: Account Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Detalle de una cuenta propia
+      tags:
+      - accounts
+    patch:
+      operationId: patch_account_api_v1_accounts__account_id__patch
+      parameters:
+      - in: path
+        name: account_id
+        required: true
+        schema:
+          format: uuid
+          title: Account Id
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Idempotency-Key
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountPatchIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Ajustes permitidos de la cuenta (alias)
+      tags:
+      - accounts
+  /healthz:
+    get:
+      operationId: healthz_healthz_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthOut'
+          description: Successful Response
+      summary: Healthz
+      tags:
+      - system
+  /internal/v1/accounts/{account_id}:
+    get:
+      operationId: get_account_internal_internal_v1_accounts__account_id__get
+      parameters:
+      - in: path
+        name: account_id
+        required: true
+        schema:
+          format: uuid
+          title: Account Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Validación de cuenta para otros servicios (Q-api-map §3)
+      tags:
+      - internal
+  /readyz:
+    get:
+      operationId: readyz_readyz_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyOut'
+          description: Successful Response
+      summary: Readyz
+      tags:
+      - system

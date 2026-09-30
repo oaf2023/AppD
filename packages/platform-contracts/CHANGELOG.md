@@ -6,6 +6,17 @@ exige bump de versión **mayor**, entrada de deprecación con política `Sunset`
 anterior y guía de migración; los cambios aditivos (campos opcionales nuevos) usan bump menor.
 El gate de CI (`tools/export_openapi.py --check`) impide que el spec se aleje del código.
 
+## 0.4.0 — 2026-09-30
+
+### Añadido
+- `ACCOUNT_CREATED = "AccountCreated"` (catálogo P #12) y `DEMO_ACCOUNT_CREATED =
+  "DemoAccountCreated"` (catálogo P #16), ambos con agregado `TradingAccount` y
+  `schema_version = 1`, publicados por el nuevo servicio `accounts` en su outbox.
+- `EVENT_TYPES_PHASE2` (dict de versiones de los eventos Fase 2) y
+  `PHASE2_TOPICS` ampliado: `accounts.trading_account.account_created`,
+  `accounts.trading_account.demo_account_created`. `EVENT_TYPES`/`PHASE1_TOPICS`
+  (Fase 1, 9 tipos) quedan intactos.
+
 ## 0.3.0 — 2026-09-29
 
 ### Añadido

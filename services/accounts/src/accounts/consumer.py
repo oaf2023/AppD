@@ -1,8 +1,8 @@
-"""consumer — consumidor de Redpanda hacia la tabla append-only de auditoría (ADR-0007).
+"""consumer — auto-provisión de la cuenta demo desde `identity.user.registered` (BUILD-020).
 
-Suscripción a los topics de las Fases 1 y 2 (`PHASE1_TOPICS + PHASE2_TOPICS`),
-procesamiento secuencial y commit manual solo tras persistir (at-least-once +
-dedup por `event_id` en `insert_records`).
+Suscripción al evento de registro, procesamiento secuencial y commit manual solo
+tras persistir (at-least-once); la unicidad de la cuenta demo (índice parcial)
+hace el handler idempotente ante reentregas.
 """
 
 from __future__ import annotations
@@ -11,58 +11,71 @@ import asyncio
 import contextlib
 import json
 import logging
+import uuid
 
 from aiokafka import AIOKafkaConsumer
 from aiokafka.structs import ConsumerRecord, TopicPartition
-from platform_contracts.audit import AuditRecordIn
-from platform_contracts.events import PHASE1_TOPICS, PHASE2_TOPICS
+from platform_contracts.events import USER_REGISTERED, topic_for_event
+from platform_kernel.errors import ConflictError
 from platform_kernel.events import EventEnvelope
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from audit.config import AuditSettings
-from audit.ingest import insert_records
+from accounts.config import AccountsSettings
+from accounts.service import AccountsService
 
-logger = logging.getLogger("audit.consumer")
+logger = logging.getLogger("accounts.consumer")
 
-GROUP_ID = "audit-service"
+GROUP_ID = "accounts-service"
 REQUEST_TIMEOUT_MS = 5000
 RETRY_DELAY_SECONDS = 5.0
 MAX_ERROR_LENGTH = 2000
 
-SEVERITY_BY_EVENT = {
-    "LoginFailed": "WARNING",
-    "SessionRevoked": "WARNING",
-    "PasswordResetCompleted": "CRITICAL",
-    "MfaEnabled": "CRITICAL",
-    "MfaDisabled": "CRITICAL",
-}
+USER_REGISTERED_TOPIC = topic_for_event("identity", "User", USER_REGISTERED)
 
 
-def record_from_envelope(envelope: EventEnvelope) -> AuditRecordIn:
-    return AuditRecordIn(
-        event_id=envelope.event_id,
-        event_type=envelope.event_type,
-        schema_version=envelope.schema_version,
-        aggregate_type=envelope.aggregate_type,
-        aggregate_id=envelope.aggregate_id,
-        action=envelope.event_type,
-        actor_type="user" if envelope.aggregate_type == "User" else "system",
-        actor_id=envelope.aggregate_id if envelope.aggregate_type == "User" else None,
-        resource_type=envelope.aggregate_type,
-        resource_id=envelope.aggregate_id,
-        correlation_id=envelope.correlation_id,
-        request_id=envelope.causation_id,
-        causation_id=None,
-        severity=SEVERITY_BY_EVENT.get(envelope.event_type, "INFO"),
-        payload=envelope.payload,
-        recorded_at=envelope.timestamp,
-    )
+async def provision_demo_from_event(
+    session: AsyncSession,
+    settings: AccountsSettings,
+    envelope: EventEnvelope,
+) -> bool:
+    """Crea la cuenta demo del usuario registrado; devuelve False si ya existía.
+
+    La jurisdicción viene del propio evento (origen único: registro en identity).
+    Un payload inválido se omite (commit + log) para no bloquear el topic.
+    """
+    service = AccountsService(session, settings)
+    try:
+        user_id = uuid.UUID(str(envelope.payload["user_id"]))
+        jurisdiction = str(envelope.payload["jurisdiction"])
+    except (KeyError, TypeError, ValueError) as exc:
+        logger.error(
+            "payload UserRegistered inválido; se omite la auto-provisión",
+            extra={"extra_fields": {"event_id": envelope.event_id, "error": str(exc)[:MAX_ERROR_LENGTH]}},
+        )
+        await session.rollback()
+        return False
+    if await service.get_demo_account(user_id) is not None:
+        return False
+    try:
+        await service.create_account(
+            user_id=user_id,
+            mode="demo",
+            currency=settings.demo_currency,
+            jurisdiction=jurisdiction,
+            causation_id=envelope.event_id,
+            correlation_id=envelope.correlation_id,
+        )
+    except ConflictError:
+        # reentrega concurrente: la unicidad del índice ya garantizó una sola cuenta
+        await session.rollback()
+        return False
+    return True
 
 
-class AuditEventConsumer:
-    """Consume los eventos de Fase 1 y 2, los persiste y confirma offset a offset."""
+class AccountsEventConsumer:
+    """Consume `identity.user.registered`, auto-provisiona la demo y confirma offset."""
 
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession], settings: AuditSettings) -> None:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], settings: AccountsSettings) -> None:
         self._session_factory = session_factory
         self._settings = settings
         self._consumer: AIOKafkaConsumer | None = None
@@ -71,7 +84,7 @@ class AuditEventConsumer:
 
     async def start(self) -> None:
         self._stopped.clear()
-        self._task = asyncio.create_task(self._run(), name="audit-event-consumer")
+        self._task = asyncio.create_task(self._run(), name="accounts-event-consumer")
 
     async def stop(self) -> None:
         self._stopped.set()
@@ -101,8 +114,7 @@ class AuditEventConsumer:
 
     async def _consume(self) -> None:
         consumer = AIOKafkaConsumer(
-            *PHASE1_TOPICS,
-            *PHASE2_TOPICS,
+            USER_REGISTERED_TOPIC,
             bootstrap_servers=self._settings.redpanda_bootstrap_servers,
             group_id=GROUP_ID,
             auto_offset_reset="earliest",
@@ -133,8 +145,14 @@ class AuditEventConsumer:
             )
             await consumer.commit({offset: message.offset + 1})
             return
-        async with self._session_factory() as session:
-            await insert_records(session, [record_from_envelope(envelope)])
+        if envelope.event_type == USER_REGISTERED:
+            async with self._session_factory() as session:
+                created = await provision_demo_from_event(session, self._settings, envelope)
+            if created:
+                logger.info(
+                    "cuenta demo auto-provisionada",
+                    extra={"extra_fields": {"event_id": envelope.event_id}},
+                )
         await consumer.commit({offset: message.offset + 1})
 
     async def _close_consumer(self) -> None:
@@ -144,4 +162,4 @@ class AuditEventConsumer:
                 await consumer.stop()
 
 
-__all__ = ["SEVERITY_BY_EVENT", "AuditEventConsumer", "record_from_envelope"]
+__all__ = ["GROUP_ID", "USER_REGISTERED_TOPIC", "AccountsEventConsumer", "provision_demo_from_event"]

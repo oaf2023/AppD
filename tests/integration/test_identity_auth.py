@@ -11,7 +11,7 @@ from helpers import TEST_PASSWORD, unique_email
 from identity import totp as totp_mod
 from identity.db import get_session_factory
 from identity.models import EmailOutbox, OutboxEvent, UserRole
-from platform_kernel.security.tokens import decode_jwt
+from platform_kernel.security.tokens import decode_jwt, new_access_token, new_service_token
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -334,3 +334,65 @@ async def test_admin_requiere_rol_backoffice(identity_client) -> None:
 async def _grant_role(session: AsyncSession, user_id: uuid.UUID, role: str) -> None:
     session.add(UserRole(user_id=user_id, role=role))
     await session.commit()
+
+
+# ------------------------------------------------------------- endpoint interno
+
+
+def _service_token(service_name: str = "accounts") -> str:
+    return new_service_token(
+        service_name=service_name,
+        secret=os.environ["SERVICE_TOKEN_SECRET"],
+        issuer="platform-identity",
+        audience="platform-internal",
+    )
+
+
+async def test_internal_users_requiere_jwt_de_servicio(identity_client) -> None:  # type: ignore[no-untyped-def]
+    registered = await _register(identity_client, unique_email())
+    assert registered.status_code == 201, registered.text
+    user_id = registered.json()["user_id"]
+
+    anonymous = await identity_client.get(f"/internal/v1/users/{user_id}")
+    assert anonymous.status_code == 401
+    assert anonymous.headers["content-type"].startswith("application/problem+json")
+
+    # token de usuario: insuficiente en endpoints internos (ADR-0017)
+    user_token = new_access_token(
+        user_id=user_id,
+        session_id=str(uuid.uuid4()),
+        roles=["user"],
+        secret=JWT_SECRET,
+        issuer="platform-identity",
+        audience="platform-api",
+        ttl_seconds=900,
+    )
+    as_user = await identity_client.get(
+        f"/internal/v1/users/{user_id}", headers={"Authorization": f"Bearer {user_token}"}
+    )
+    assert as_user.status_code == 401
+
+
+async def test_internal_users_devuelve_perfil_minimo(identity_client) -> None:  # type: ignore[no-untyped-def]
+    registered = await _register(identity_client, unique_email())
+    assert registered.status_code == 201, registered.text
+    user_id = registered.json()["user_id"]
+
+    response = await identity_client.get(
+        f"/internal/v1/users/{user_id}", headers={"Authorization": f"Bearer {_service_token()}"}
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    # minimización de PII (Q §3): solo los campos necesarios, nunca el email
+    assert set(body) == {"user_id", "status", "jurisdiction", "email_verified"}
+    assert body["user_id"] == user_id
+    assert body["jurisdiction"] == "ES"
+    assert body["email_verified"] is False
+
+
+async def test_internal_users_404_si_no_existe(identity_client) -> None:  # type: ignore[no-untyped-def]
+    response = await identity_client.get(
+        f"/internal/v1/users/{uuid.uuid4()}", headers={"Authorization": f"Bearer {_service_token()}"}
+    )
+    assert response.status_code == 404
+    assert response.json()["type"] == "urn:platform:error:not-found"

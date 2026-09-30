@@ -59,11 +59,18 @@ def _target_for(path: str) -> str | None:
         return "audit"
     if path.startswith("/api/v1/market-data/"):
         return "market_data"
+    if path.startswith("/api/v1/accounts"):
+        return "accounts"
     return None
 
 
 def _base_url(target: str, settings: GatewaySettings) -> str:
-    urls = {"identity": settings.identity_url, "audit": settings.audit_url, "market_data": settings.market_data_url}
+    urls = {
+        "identity": settings.identity_url,
+        "audit": settings.audit_url,
+        "market_data": settings.market_data_url,
+        "accounts": settings.accounts_url,
+    }
     return urls[target]
 
 
@@ -201,6 +208,7 @@ async def _aggregate_health(request: Request, ready: bool = False) -> Response:
         ("audit", settings.audit_url),
         ("market_data", settings.market_data_url),
         ("ledger", settings.ledger_url),
+        ("accounts", settings.accounts_url),
     ):
         path = "/readyz" if ready else "/healthz"
         try:

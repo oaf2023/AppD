@@ -122,6 +122,15 @@ class MessageOut(BaseModel):
     detail: str
 
 
+class UserInternalOut(BaseModel):
+    """Perfil mínimo para otros servicios (Q-api-map §3, minimización de PII)."""
+
+    user_id: uuid.UUID
+    status: str
+    jurisdiction: str
+    email_verified: bool
+
+
 class MfaSetupOut(BaseModel):
     secret: str
     otpauth_url: str
@@ -153,6 +162,7 @@ __all__ = [
     "ResetPasswordIn",
     "SessionOut",
     "TokenPairOut",
+    "UserInternalOut",
     "UserOut",
     "VerifyEmailIn",
 ]

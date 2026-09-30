@@ -279,6 +279,30 @@ components:
       - user
       title: TokenPairOut
       type: object
+    UserInternalOut:
+      description: Perfil mínimo para otros servicios (Q-api-map §3, minimización
+        de PII).
+      properties:
+        email_verified:
+          title: Email Verified
+          type: boolean
+        jurisdiction:
+          title: Jurisdiction
+          type: string
+        status:
+          title: Status
+          type: string
+        user_id:
+          format: uuid
+          title: User Id
+          type: string
+      required:
+      - user_id
+      - status
+      - jurisdiction
+      - email_verified
+      title: UserInternalOut
+      type: object
     UserOut:
       properties:
         created_at:
@@ -718,6 +742,35 @@ paths:
       summary: Healthz
       tags:
       - system
+  /internal/v1/users/{user_id}:
+    get:
+      description: Solo JWT de servicio (accounts/kyc/admin); 404 si el usuario no
+        existe.
+      operationId: get_user_internal_internal_v1_users__user_id__get
+      parameters:
+      - in: path
+        name: user_id
+        required: true
+        schema:
+          format: uuid
+          title: User Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserInternalOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Perfil mínimo para servicios internos (Q-api-map §3)
+      tags:
+      - internal
   /readyz:
     get:
       operationId: readyz_readyz_get

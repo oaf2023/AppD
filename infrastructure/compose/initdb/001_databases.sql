@@ -4,3 +4,4 @@ CREATE DATABASE platform_identity;
 CREATE DATABASE platform_audit;
 CREATE DATABASE platform_gateway;
 CREATE DATABASE platform_ledger;
+CREATE DATABASE platform_accounts;

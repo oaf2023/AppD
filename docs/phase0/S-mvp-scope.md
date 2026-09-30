@@ -7,7 +7,7 @@ Fecha: 2026-09-27 · Fase 0 · Estado: `IMPLEMENTADO` (documento)
 Este documento define el **alcance mínimo verificable** del MVP (Minimum Viable Product) para MonedasAR. El MVP se entrega en **dos fases secuenciales autorizadas**:
 
 - **Fase 1 — Foundation** (autorizada): Identidad, Auditoría, Gateway, Shell Web, Infraestructura, Observabilidad.
-- **Fase 2 — Account & Demo** (pendiente de autorización): Cuenta demo, Wallet demo, Ledger, Market Data básico, Trading demo (órdenes, posiciones, PnL, SL/TP, cierre, historial).
+- **Fase 2 — Account & Demo** (autorizada; en ejecución — F2.1 `ledger` y F2.2 `accounts` IMPLEMENTADOS 2026-09-30, ver `docs/component-status.md`): Cuenta demo, Wallet demo, Ledger, Market Data básico, Trading demo (órdenes, posiciones, PnL, SL/TP, cierre, historial).
 
 **Regla de oro**: En el inicio de la Fase 1, **todo es `PENDIENTE` salvo los documentos de diseño**. No se declara `IMPLEMENTADO` sin código, tests y evidencia de ejecución.
 
@@ -28,7 +28,7 @@ Este documento define el **alcance mínimo verificable** del MVP (Minimum Viable
 | **Observabilidad** | OTel Collector, Prometheus, Grafana, Loki, Tempo; dashboards básicos (RED metrics por servicio), alertas SLO placeholder, trazas W3C | `PENDIENTE` |
 | **Documentación de diseño** | Docs phase0 (A–Z), ADRs base | `IMPLEMENTADO` (este documento) |
 
-### 2.2 Fase 2 — Account & Demo (PENDIENTE AUTORIZACIÓN)
+### 2.2 Fase 2 — Account & Demo (AUTORIZADA; en ejecución)
 
 | Área | Componentes | Estado Inicial |
 |------|-------------|----------------|
@@ -39,6 +39,11 @@ Este documento define el **alcance mínimo verificable** del MVP (Minimum Viable
 | **Trading (demo)** | OMS/EMS: órdenes market/limit/stop, ejecución simulada (matching interno), posiciones, margen, PnL tiempo real, SL/TP, cierre, historial órdenes/positions | `PENDIENTE` |
 | **Risk (demo)** | Límites notionales, max posición, max órdenes/día, kill switch cuenta, margin call simulado | `PENDIENTE` |
 | **Notification (demo)** | Email (adapter mock), in-app, preferencias básicas | `PENDIENTE` |
+
+> `Estado Inicial` = snapshot al inicio de la Fase 1 (Regla de oro §1). Progreso real
+> al 2026-09-30: **Ledger** F2.1 `IMPLEMENTADO` y **Accounts** F2.2 `IMPLEMENTADO`
+> ( Wallet, Market Data avanzado, Trading/Risk/Notification siguen `PENDIENTE` );
+> fuente: `docs/component-status.md`.
 
 ---
 
