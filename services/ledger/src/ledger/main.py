@@ -16,6 +16,7 @@ from platform_kernel.telemetry import init_telemetry, instrument_app
 
 from ledger.config import get_ledger_settings
 from ledger.db import get_engine, reset_engine
+from ledger.public import router as public_router
 from ledger.routes import router
 
 logger = logging.getLogger("ledger")
@@ -41,8 +42,19 @@ def create_app(*, auto_migrate: bool | None = None) -> FastAPI:
             relay = OutboxRelay(get_session_factory(), settings)
             await relay.start()
         app.state.relay = relay
+
+        consumer = None
+        if settings.event_consumer_enabled:
+            from ledger.consumer import LedgerEventConsumer
+            from ledger.db import get_session_factory
+
+            consumer = LedgerEventConsumer(get_session_factory(), settings)
+            await consumer.start()
+        app.state.event_consumer = consumer
         logger.info("ledger listo", extra={"extra_fields": {"environment": settings.environment}})
         yield
+        if consumer is not None:
+            await consumer.stop()
         if relay is not None:
             await relay.stop()
         await get_engine().dispose()
@@ -56,6 +68,7 @@ def create_app(*, auto_migrate: bool | None = None) -> FastAPI:
         redoc_url=None,
     )
     app.include_router(router)
+    app.include_router(public_router)
     app.add_middleware(MetricsMiddleware, service=settings.service_name)
     app.add_middleware(RequestContextMiddleware, trust_client_request_id=True)
     install_error_handlers(app)

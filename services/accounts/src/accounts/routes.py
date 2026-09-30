@@ -1,7 +1,8 @@
 """routes — endpoints del Accounts Service (Q-api-map §2.4 y §3).
 
-Públicos: lista/detalle/creación/ajuste de cuentas propias con sesión de usuario.
-Internos: validación de cuenta para otros servicios con JWT de servicio.
+Públicos: lista/detalle/creación/ajuste de cuentas propias con sesión de usuario,
+cierre con saldo cero y recarga de la demo (F2.3). Internos: validación de
+cuenta para otros servicios con JWT de servicio.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from accounts.schemas import (
     AccountStatus,
     HealthOut,
     ReadyOut,
+    ReloadDemoOut,
     account_out,
 )
 from accounts.service import AccountsService
@@ -207,6 +209,96 @@ async def patch_account(
     else:
         _, data = await run()
     return AccountOut.model_validate(data)
+
+
+@router.post(
+    "/api/v1/accounts/{account_id}/close",
+    response_model=AccountOut,
+    tags=["accounts"],
+    summary="Cierre de cuenta con saldo cero (§2.4, F2.3)",
+)
+async def close_account(
+    account_id: uuid.UUID,
+    request: Request,
+    response: Response,
+    session: SessionDep,
+    settings: SettingsDep,
+    auth: Annotated[AuthContext, Depends(require_user)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> AccountOut:
+    """Cierra la cuenta demo si su saldo real en ledger es cero (§2.4).
+
+    Saldo distinto de cero → `409`; KYC + step-up MFA diferidos a F6 (se
+    requiere sólo sesión de usuario). `Idempotency-Key` opcional (UUID).
+    """
+    service = AccountsService(session, settings)
+    user_id = uuid.UUID(auth.user_id)
+
+    async def run() -> tuple[int, dict[str, Any]]:
+        account = await service.close_account(
+            user_id=user_id,
+            account_id=account_id,
+            client=getattr(request.app.state, "ledger_client", None),
+        )
+        return 200, account_out(account).model_dump(mode="json")
+
+    if idempotency_key:
+        _, data, replayed = await idempotent_execute(
+            store=request.app.state.idempotency,
+            scope=f"accounts:close:{auth.user_id}",
+            key=idempotency_key,
+            payload={"account_id": str(account_id)},
+            execute=run,
+        )
+        response.headers["Idempotent-Replay"] = "true" if replayed else "false"
+    else:
+        _, data = await run()
+    return AccountOut.model_validate(data)
+
+
+@router.post(
+    "/api/v1/accounts/{account_id}/reload-demo",
+    response_model=ReloadDemoOut,
+    status_code=202,
+    tags=["accounts"],
+    summary="Recarga de la demo al saldo inicial (BUILD-020, F2.3)",
+)
+async def reload_demo(
+    account_id: uuid.UUID,
+    request: Request,
+    response: Response,
+    session: SessionDep,
+    settings: SettingsDep,
+    auth: Annotated[AuthContext, Depends(require_user)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ReloadDemoOut:
+    """Emite `DemoBalanceReset` (#17): ledger ajusta el saldo y la wallet lo proyecta.
+
+    `Idempotency-Key` obligatorio (UUID, ADR-0010); el replay devuelve la
+    misma respuesta con `Idempotent-Replay: true`.
+    """
+    key = _require_idempotency_key(idempotency_key)
+    service = AccountsService(session, settings)
+    user_id = uuid.UUID(auth.user_id)
+
+    async def run() -> tuple[int, dict[str, Any]]:
+        data = await service.reload_demo(
+            user_id=user_id,
+            account_id=account_id,
+            client=getattr(request.app.state, "ledger_client", None),
+        )
+        return 202, data
+
+    status_code, data, replayed = await idempotent_execute(
+        store=request.app.state.idempotency,
+        scope=f"accounts:reload:{auth.user_id}",
+        key=key,
+        payload={"account_id": str(account_id)},
+        execute=run,
+    )
+    response.status_code = status_code
+    response.headers["Idempotent-Replay"] = "true" if replayed else "false"
+    return ReloadDemoOut.model_validate(data)
 
 
 @router.get(

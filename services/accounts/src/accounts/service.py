@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 import httpx
 from platform_contracts import events as ev
+from platform_kernel.clock import utcnow
 from platform_kernel.errors import AppError, ConflictError, NotFoundError
 from platform_kernel.events import build_event
 from platform_kernel.money import to_decimal
@@ -23,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from accounts.config import AccountsSettings
 from accounts.identity_client import fetch_user_profile, service_token
+from accounts.ledger_client import fetch_owner_balances
 from accounts.metrics import ACCOUNTS_CREATED
 from accounts.models import Jurisdiction, OutboxEvent, TradingAccount
 from accounts.pagination import encode_cursor
@@ -32,6 +35,18 @@ TYPE_JURISDICTION_BLOCKED = "urn:platform:error:jurisdiction-blocked"
 TYPE_LIVE_NOT_ENABLED = "urn:platform:error:live-not-enabled"
 
 DEMO_EXISTS_DETAIL = "El usuario ya tiene una cuenta demo (una sola por usuario, BUILD-020)"
+
+
+def _canonical(value: Decimal) -> str:
+    """Representación decimal canónica sin ceros a la derecha (ADR-0006).
+
+    Espejo de `ledger.postings.canonical_amount` (las fronteras impiden imports
+    cruzados entre servicios).
+    """
+    text = format(value, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text or "0"
 
 
 class AccountsService:
@@ -230,6 +245,108 @@ class AccountsService:
             account.alias = body.alias
         await self.session.commit()
         return account
+
+    # ------------------------------------------------------------- cierre y recarga (F2.3)
+
+    async def _owner_balances(
+        self, user_id: uuid.UUID, *, client: httpx.AsyncClient | None = None
+    ) -> list[tuple[uuid.UUID, str, Decimal]]:
+        settings = self.settings
+        token = service_token(
+            service_name=settings.service_name,
+            secret=settings.service_token_secret,
+            issuer=settings.jwt_issuer,
+            audience=settings.service_token_audience,
+        )
+        rows, _as_of = await fetch_owner_balances(
+            ledger_url=settings.ledger_url,
+            token=token,
+            owner_id=user_id,
+            client=client,
+            timeout=settings.ledger_timeout_seconds,
+        )
+        return rows
+
+    async def close_account(
+        self, *, user_id: uuid.UUID, account_id: uuid.UUID, client: httpx.AsyncClient | None = None
+    ) -> TradingAccount:
+        """Cierra la cuenta demo con saldo cero real (Q §2.4).
+
+        - saldo distinto de cero en ledger → `409` (no se inventa fondeo);
+        - KYC/step-up MFA documentados como diferidos a F6 (se cierra sólo con
+          sesión de usuario en F2.3);
+        - emite `AccountClosed` (#39) en la misma transacción (outbox ADR-0007).
+        """
+        account = await self.get_account(user_id=user_id, account_id=account_id)
+        if account.status == "closed":
+            raise ConflictError("la cuenta ya está cerrada")
+        if account.type != "demo":
+            raise AppError(
+                403,
+                TYPE_LIVE_NOT_ENABLED,
+                "Cierre no habilitado",
+                "El cierre de cuentas LIVE requiere KYC aprobado (BUILD-020; KYC en F6)",
+            )
+        balances = await self._owner_balances(user_id, client=client)
+        if any(balance != 0 for _owner, _currency, balance in balances):
+            raise ConflictError("la cuenta debe tener saldo cero para cerrar (Q-api-map §2.4)")
+        account.status = "closed"
+        account.closed_at = utcnow()
+        await self._emit(
+            ev.ACCOUNT_CLOSED,
+            aggregate_id=str(account.id),
+            payload={
+                "account_id": str(account.id),
+                "user_id": str(user_id),
+                "currency": account.currency,
+                "closed_at": account.closed_at.isoformat(),
+            },
+        )
+        await self.session.commit()
+        return account
+
+    async def reload_demo(
+        self, *, user_id: uuid.UUID, account_id: uuid.UUID, client: httpx.AsyncClient | None = None
+    ) -> dict[str, Any]:
+        """Recarga la demo al saldo inicial configurado (BUILD-020 "recargable").
+
+        Emite `DemoBalanceReset` (#17) con el saldo objetivo; ledger calcula el
+        delta contra el saldo real (`new - current`) y emite `LedgerPosted`,
+        que la wallet aplica a la proyección. Saldo previo leído de la fuente
+        de verdad (Q §3); ledger caído → `503` (no se inventa el saldo).
+        """
+        account = await self.get_account(user_id=user_id, account_id=account_id)
+        if account.type != "demo":
+            raise ConflictError("sólo las cuentas demo son recargables")
+        if account.status != "active":
+            raise ConflictError("la cuenta debe estar activa para recargar")
+        balances = await self._owner_balances(user_id, client=client)
+        current = next(
+            (balance for _owner, currency, balance in balances if currency == account.currency),
+            Decimal(0),
+        )
+        new_balance = to_decimal(self.settings.demo_initial_balance)
+        event_id = await self._emit(
+            ev.DEMO_BALANCE_RESET,
+            aggregate_id=str(account.id),
+            payload={
+                "account_id": str(account.id),
+                "user_id": str(user_id),
+                "currency": account.currency,
+                "new_balance": _canonical(new_balance),
+                "previous_balance": _canonical(current),
+                "triggered_by": "user",
+            },
+        )
+        await self.session.commit()
+        return {
+            "account_id": str(account.id),
+            "currency": account.currency,
+            "previous_balance": _canonical(current),
+            "new_balance": _canonical(new_balance),
+            "status": "scheduled",
+            "event_id": event_id,
+        }
 
 
 __all__ = [

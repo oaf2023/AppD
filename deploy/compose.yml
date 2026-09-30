@@ -6,7 +6,7 @@
 #      docker compose --profile obs up -d   (añade observabilidad)
 # Perfil obs: prometheus(40020) grafana(40021) loki(40022) tempo(40023) otel-collector(40024).
 # Nota de seguridad: los puertos de datos (40010-40012) y de obs internos se publican
-# SOLO en 127.0.0.1 del servidor; la app (40000-40006) y Grafana (40021) son de LAN.
+# SOLO en 127.0.0.1 del servidor; la app (40000-40007) y Grafana (40021) son de LAN.
 
 name: platform-omv
 
@@ -189,6 +189,7 @@ services:
       MARKET_DATA_URL: http://market-data:8084
       LEDGER_URL: http://ledger:8085
       ACCOUNTS_URL: http://accounts:8086
+      WALLET_URL: http://wallet:8087
       CORS_ORIGINS: ${CORS_ORIGINS}
       REDIS_URL: redis://redis:6379/0
       OTEL_ENDPOINT: ${OTEL_ENDPOINT:-}
@@ -204,6 +205,8 @@ services:
       ledger:
         condition: service_healthy
       accounts:
+        condition: service_healthy
+      wallet:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5)"]
@@ -281,6 +284,7 @@ services:
       SERVICE_TOKEN_SECRET: ${SERVICE_TOKEN_SECRET}
       ACCOUNTS_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/platform_accounts
       IDENTITY_URL: http://identity:8081
+      LEDGER_URL: http://ledger:8085
       REDPANDA_BOOTSTRAP_SERVERS: redpanda:9092
       EVENT_CONSUMER_ENABLED: "true"
       REDIS_URL: redis://redis:6379/0
@@ -295,8 +299,55 @@ services:
         condition: service_healthy
       redpanda:
         condition: service_healthy
+      ledger:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8086/healthz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  wallet:
+    build:
+      context: ..
+      dockerfile: services/wallet/Dockerfile
+    image: platform/wallet:omv
+    restart: unless-stopped
+    command:
+      - sh
+      - -c
+      - |
+        python -c "import os; from wallet.migrate import run_migrations; run_migrations(os.environ['WALLET_DATABASE_URL'])"
+        exec uvicorn wallet.main:app --host 0.0.0.0 --port 8087
+    environment:
+      ENVIRONMENT: production
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      JWT_SECRET: ${JWT_SECRET}
+      SERVICE_TOKEN_SECRET: ${SERVICE_TOKEN_SECRET}
+      WALLET_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/platform_wallet
+      LEDGER_URL: http://ledger:8085
+      ACCOUNTS_URL: http://accounts:8086
+      REDPANDA_BOOTSTRAP_SERVERS: redpanda:9092
+      EVENT_CONSUMER_ENABLED: "true"
+      REDIS_URL: redis://redis:6379/0
+      OTEL_ENDPOINT: ${OTEL_ENDPOINT:-}
+      WALLET_RECONCILE_INTERVAL_SECONDS: ${WALLET_RECONCILE_INTERVAL_SECONDS:-60}
+    ports:
+      - "40007:8087"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      ledger:
+        condition: service_healthy
+      accounts:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8087/healthz', timeout=3)"]
       interval: 15s
       timeout: 5s
       retries: 20

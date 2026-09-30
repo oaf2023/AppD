@@ -32,10 +32,12 @@ Regla: todo lo aquí listado es implementable con código propio + open-source +
 ## 3. Dinero base: accounts / wallet / ledger (Fase 2)
 
 > Estado (2026-09-30, detalle en `docs/component-status.md`): **BUILD-018** (ledger) F2.1
-> `IMPLEMENTADO`; **BUILD-020** (cuentas demo auto-aprovisionadas; recarga de demo pendiente)
-> y **BUILD-023** (matriz de jurisdicciones) F2.2 `IMPLEMENTADO`; **BUILD-017** `PARCIAL`
-> (schemas `accounts`/`ledger`; `wallet` pendiente), **BUILD-022** `PARCIAL` (cursor del
-> historial de cuentas; multi-moneda pendiente); **BUILD-019**/**BUILD-021** `PENDIENTES`.
+> `IMPLEMENTADO`; **BUILD-020** (cuentas demo auto-aprovisionadas y recargables) y
+> **BUILD-023** (matriz de jurisdicciones) F2.2 `IMPLEMENTADO`; **BUILD-017** (schemas
+> `accounts`/`ledger` con Alembic; `wallet` con Alembic + `create_all`/seed USD),
+> **BUILD-019** (proyección wallet + reconciliador),
+> **BUILD-021** (transferencias internas idempotentes) y **BUILD-022** (cursor
+> multi-moneda) F2.3 `IMPLEMENTADO`; **BUILD-024**/**BUILD-025** `PENDIENTES`.
 
 | ID | Funcionalidad | Por qué es construible ya | Entregable esperado | Fase |
 |---|---|---|---|---|

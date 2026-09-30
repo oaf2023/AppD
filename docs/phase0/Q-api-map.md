@@ -212,9 +212,12 @@ Convención de columna **Idem**: `Sí` = efecto único garantizado con `Idempote
 | POST | `/api/v1/accounts` | Crea cuenta (DEMO siempre; LIVE requiere KYC + flag) | Sesión + step-up MFA | Sí | 2 |
 | GET | `/api/v1/accounts/{account_id}` | Detalle de cuenta | `read` + pertenencia o `admin` | N/A | 2 |
 | PATCH | `/api/v1/accounts/{account_id}` | Ajustes permitidos (alias, preferencias) | `read` + pertenencia | Sí | 2 |
-| POST | `/api/v1/accounts/{account_id}/close` | Cierre de cuenta (condicionado a saldo cero + KYC) | Sesión + step-up MFA | Sí | 2 |
+| POST | `/api/v1/accounts/{account_id}/close` | Cierre de cuenta condicionado a saldo cero real en ledger (409 si no lo es; 403 `live-not-enabled` para LIVE) | Sesión | Opcional | 2 |
+| POST | `/api/v1/accounts/{account_id}/reload-demo` | Recarga la demo a `demo_initial_balance`; emite `DemoBalanceReset` (#17) y responde `202` con `scheduled` | Sesión | **Sí (obligatoria)** | 2 |
 | GET | `/api/v1/accounts/{account_id}/limits` | Límites de la cuenta (posición, pérdida diaria, apalancamiento) | `read` + pertenencia | N/A | 4 |
 | GET | `/api/v1/accounts/{account_id}/status-history` | Historial de estados (activa, suspendida, cerrada) | `read` + pertenencia o `admin` | N/A | 7 |
+
+> **Nota F2.3**: el cierre de cuentas exige hoy sólo sesión de usuario + saldo cero en ledger; la verificación de **KYC + step-up MFA** (columna "Auth" prevista) queda **diferida a F6**. El cierre emite `AccountClosed` (#39) y fija `closed_at`.
 
 ### 2.5 Wallet (Fase 2 — proyección; fuente de verdad = ledger)
 
@@ -222,9 +225,13 @@ Convención de columna **Idem**: `Sí` = efecto único garantizado con `Idempote
 |---|---|---|---|---|---|
 | GET | `/api/v1/wallet/balances` | Balances multi-moneda (disponible/reservado) + `as_of` + indicador de reconciliación | `read` + pertenencia | N/A | 2 |
 | GET | `/api/v1/wallet/balances/{currency}` | Balance por moneda | `read` + pertenencia | N/A | 2 |
-| GET | `/api/v1/wallet/transactions` | Movimientos de saldo (cursor, `from/to` obligatorio si > 90 días) | `read` + pertenencia | N/A | 2 |
+| GET | `/api/v1/wallet/transactions` | Movimientos de saldo (cursor; `from`/`to` obligatorios, ventana ≤ 90 días) | `read` + pertenencia | N/A | 2 |
 | POST | `/api/v1/wallet/transfers` | Transferencia interna entre cuentas propias (DEMO/LIVE sin cruce) | `payments` | **Sí** | 2 |
 | GET | `/api/v1/wallet/conversion-rates` | Tasas de conversión vigentes (fuente y timestamp) | `read` | N/A | 2 |
+
+> **Nota §2.5 (interpretación A→B)**: la transferencia debita el saldo real de la cuenta A en el ledger y acredita el mismo importe en B (`from_account_id` → `to_account_id`); wallet valida cuentas activas, mismo modo (demo/live) y misma moneda, y comprueba el saldo real vía `GET /internal/v1/balances` antes de escribir `POST /internal/v1/postings`. Sin saldo → `409` `urn:platform:error:insufficient-balance`; cuentas inactivas o cruce de modos → `409` `urn:platform:error:conflict`; cuentas inexistentes/ajenas → `404` idéntico (BOLA §1.7.3). La wallet sólo proyecta el resultado (evento `LedgerPosted` #38).
+>
+> **Nota FX (L §10, no determinado)**: hasta que se defina la fuente de tipo de cambio, `GET /api/v1/wallet/conversion-rates` responde `data: []`, `source: "none"` y `as_of: null`.
 
 ### 2.6 Ledger / Statements (Fase 2 — fuente de verdad)
 
@@ -237,7 +244,7 @@ Convención de columna **Idem**: `Sí` = efecto único garantizado con `Idempote
 | GET | `/api/v1/admin/ledger/entries` | Asientos crudos (backoffice, cross-cuenta) | `admin` | N/A | 7 |
 | POST | `/api/v1/admin/ledger/reconciliations` | Ejecuta reconciliación ledger↔wallet | `admin` + 4-ojos | **Sí** | 7 |
 
-> Los asientos **nunca** se crean ni modifican por API pública: los postings ocurren solo en `/internal/v1/ledger/postings` desde servicios de negocio (§3).
+> Los asientos **nunca** se crean ni modifican por API pública: los postings ocurren solo en `/internal/v1/postings` desde servicios de negocio (§3).
 
 ### 2.7 Market Data (overview en Fase 1; ticks/velas en Fase 3)
 
@@ -391,6 +398,7 @@ Superficie `/internal/v1/`: bloqueada en el edge, solo red de servicio, nunca co
 | wallet | `POST /internal/v1/reservations` | trading, payments | Reserva/liberación de fondos (hold) | mTLS + JWT de servicio + `Idempotency-Key` | 2 |
 | ledger | `POST /internal/v1/postings` | wallet, trading, payments | Asiento double-entry (única vía de escritura) | mTLS + JWT de servicio + `Idempotency-Key` | 2 |
 | ledger | `GET /internal/v1/postings/{posting_id}` | wallet, admin | Verificación de asiento | mTLS + JWT de servicio | 2 |
+| ledger | `GET /internal/v1/balances` (`?owner_id=` opcional) | accounts (cierre/recarga), wallet (reconciliador) | Saldo por propietario y moneda: Σcréditos − Σdébitos en cuentas no control (L §4.1) | mTLS + JWT de servicio | 2 |
 | risk | `POST /internal/v1/risk/pre-trade-check` | trading | Validación de límites/margen previa a la orden | mTLS + JWT de servicio | 4 |
 | market-data | `GET /internal/v1/market-data/quote/{symbol}` | trading, risk | Snapshot de precio para margen/orden | mTLS + JWT de servicio | 3 |
 | trading | `POST /internal/v1/orders` | bots, copy-trading | Órdenes programáticas con scope acotado | mTLS + JWT de servicio + `Idempotency-Key` | 5 |

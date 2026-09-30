@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import psycopg
@@ -54,6 +55,7 @@ async def test_flujo_completo_a_traves_del_gateway(servers: None) -> None:
             "market_data": "ok",
             "ledger": "ok",
             "accounts": "ok",
+            "wallet": "ok",
         }
 
         # la documentación interna no se expone
@@ -213,6 +215,85 @@ async def test_gateway_devuelve_404_en_ruta_desconocida(servers: None) -> None:
         body = response.json()
         assert body["type"] == "urn:platform:error:not-found"
         assert "request_id" in body
+
+
+async def _register_login(client: httpx.AsyncClient) -> tuple[dict[str, str], str]:  # type: ignore[no-untyped-def]
+    """Registra, verifica y devuelve (headers de auth, user_id)."""
+    email = unique_email()
+    register = await client.post(
+        "/api/v1/auth/register",
+        json={"email": email, "password": TEST_PASSWORD, "jurisdiction": "ES", "accept_terms": True},
+        headers={"Idempotency-Key": f"e2e-{uuid.uuid4().hex}"},
+    )
+    assert register.status_code == 201, register.text
+    verify = await client.post("/api/v1/auth/verify-email", json={"token": register.json()["dev_verification_token"]})
+    assert verify.status_code == 200, verify.text
+    login = await client.post("/api/v1/auth/login", json={"email": email, "password": TEST_PASSWORD})
+    assert login.status_code == 200, login.text
+    auth = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    return auth, str(register.json()["user_id"])
+
+
+async def test_wallet_a_traves_del_gateway(servers: None) -> None:
+    """Q §2.4/§2.5: saldos, movimientos, transferencias y FX desacoplados en `/api/v1/wallet`."""
+    async with httpx.AsyncClient(base_url=GATEWAY, timeout=30.0) as client:
+        auth, user_id = await _register_login(client)
+
+        # saldos: 200 con proyección propia (vacía hasta que lleguen eventos)
+        balances = await client.get("/api/v1/wallet/balances", headers=auth)
+        assert balances.status_code == 200, balances.text
+        body = balances.json()
+        assert isinstance(body["data"], list)
+        assert body["as_of"]
+        assert "reconciliation" in body
+
+        # FX no determinado en Fase 2 (L §10): lista vacía con fuente explícita
+        fx = await client.get("/api/v1/wallet/conversion-rates", headers=auth)
+        assert fx.status_code == 200, fx.text
+        assert fx.json()["data"] == []
+        assert fx.json()["source"] == "none"
+        assert fx.json()["as_of"] is None
+
+        # movimientos exigen rango (§1.5)
+        sin_rango = await client.get("/api/v1/wallet/transactions", headers=auth)
+        assert sin_rango.status_code == 422
+        now = datetime.now(UTC)
+        movimientos = await client.get(
+            "/api/v1/wallet/transactions",
+            params={"from": (now - timedelta(days=1)).isoformat(), "to": (now + timedelta(days=1)).isoformat()},
+            headers=auth,
+        )
+        assert movimientos.status_code == 200, movimientos.text
+        assert isinstance(movimientos.json()["data"], list)
+
+        # transferencia sin Idempotency-Key → 400 tipado (ADR-0010)
+        sin_clave = await client.post(
+            "/api/v1/wallet/transfers",
+            json={
+                "from_account_id": str(uuid.uuid4()),
+                "to_account_id": str(uuid.uuid4()),
+                "currency": "USD",
+                "amount": "10",
+            },
+            headers=auth,
+        )
+        assert sin_clave.status_code == 400
+        assert sin_clave.json()["type"] == "urn:platform:error:validation"
+
+        # con clave: cuenta destino inexistente → 404 idéntico (BOLA §1.7.3)
+        destino = await client.post(
+            "/api/v1/wallet/transfers",
+            json={
+                "from_account_id": str(uuid.uuid4()),
+                "to_account_id": str(uuid.uuid4()),
+                "currency": "USD",
+                "amount": "10",
+            },
+            headers={**auth, "Idempotency-Key": str(uuid.uuid4())},
+        )
+        assert destino.status_code == 404, destino.text
+        assert destino.json()["type"] == "urn:platform:error:not-found"
+        assert user_id  # el token pertenece al usuario registrado
 
 
 async def test_gateway_rate_limit_global_excede(servers: None) -> None:

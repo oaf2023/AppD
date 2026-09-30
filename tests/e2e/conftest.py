@@ -1,4 +1,4 @@
-"""conftest de pruebas e2e: Identity, Audit, Market Data, Ledger, Accounts y Gateway como servidores reales."""
+"""conftest de pruebas e2e: Identity, Audit, Market Data, Ledger, Accounts, Wallet y Gateway como servidores reales."""
 
 from __future__ import annotations
 
@@ -11,8 +11,17 @@ PORT_AUDIT = 18083
 PORT_MARKET_DATA = 18084
 PORT_LEDGER = 18085
 PORT_ACCOUNTS = 18086
+PORT_WALLET = 18087
 PORT_GATEWAY = 18080
-ALL_PORTS = (PORT_GATEWAY, PORT_IDENTITY, PORT_AUDIT, PORT_MARKET_DATA, PORT_LEDGER, PORT_ACCOUNTS)
+ALL_PORTS = (
+    PORT_GATEWAY,
+    PORT_IDENTITY,
+    PORT_AUDIT,
+    PORT_MARKET_DATA,
+    PORT_LEDGER,
+    PORT_ACCOUNTS,
+    PORT_WALLET,
+)
 
 
 async def _wait_port_free(port: int, timeout: float = 20.0) -> None:
@@ -40,6 +49,7 @@ async def servers(clean_dbs: None) -> None:  # type: ignore[no-untyped-def]
     from identity.main import create_app as create_identity
     from ledger.main import create_app as create_ledger
     from market_data.main import create_app as create_market_data
+    from wallet.main import create_app as create_wallet
 
     for port in ALL_PORTS:
         await _wait_port_free(port)
@@ -50,6 +60,7 @@ async def servers(clean_dbs: None) -> None:  # type: ignore[no-untyped-def]
         (create_market_data(), PORT_MARKET_DATA),
         (create_ledger(), PORT_LEDGER),
         (create_accounts(), PORT_ACCOUNTS),
+        (create_wallet(), PORT_WALLET),
         (create_gateway(), PORT_GATEWAY),
     ]
     running: list[tuple[uvicorn.Server, asyncio.Task[None]]] = []

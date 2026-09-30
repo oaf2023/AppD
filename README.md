@@ -1,6 +1,6 @@
 # MonedasAR — Plataforma FinTech/Trading de derivados OTC
 
-Marca: `MonedasAR` · Dominio: `[DOMAIN]` · Estado: **Fase 0 (A–Z) + Fase 1 (foundation) + F2.1/F2.2 (ledger · accounts)**
+Marca: `MonedasAR` · Dominio: `[DOMAIN]` · Estado: **Fase 0 (A–Z) + Fase 1 (foundation) + F2.1/F2.2/F2.3 (ledger · accounts · wallet)**
 
 Plataforma de trading de derivados OTC con paridad funcional objetivo frente a proveedores
 de referencia, construida desde cero. Nombre y marca definidos (`MonedasAR`, 00-decisions §1);
@@ -30,8 +30,8 @@ uv sync --all-packages
 docker compose -f infrastructure/compose/compose.yml --profile events up -d postgres redis redpanda
 
 #    Nota: initdb solo corre con el volumen pgdata vacío. Si el volumen es anterior a
-#    F2.2, crear la base una sola vez:
-#    docker compose -f infrastructure/compose/compose.yml exec postgres psql -U platform -d postgres -c "CREATE DATABASE platform_accounts;"
+#    F2.3, crear las bases una sola vez:
+#    docker compose -f infrastructure/compose/compose.yml exec postgres psql -U platform -d postgres -c "CREATE DATABASE platform_accounts; CREATE DATABASE platform_wallet;"
 
 # 3. Suite de pruebas (unit + integration + e2e): requiere el paso 2
 uv run pytest
@@ -43,6 +43,7 @@ uv run audit        # http://localhost:8083
 uv run market-data  # http://localhost:8084  (opcional: datos reales de la sección Mercados)
 uv run ledger       # http://localhost:8085  (asientos double-entry; API interna)
 uv run accounts     # http://localhost:8086  (cuentas demo/live; API pública + interna)
+uv run wallet       # http://localhost:8087  (proyección de saldos, movimientos y transferencias)
 
 # 5. Frontend shell (Next.js 15)
 npm install
@@ -71,6 +72,7 @@ docker build -f services/audit/Dockerfile    -t platform/audit:dev .
 docker build -f services/market-data/Dockerfile -t platform/market-data:dev .
 docker build -f services/ledger/Dockerfile   -t platform/ledger:dev .
 docker build -f services/accounts/Dockerfile -t platform/accounts:dev .
+docker build -f services/wallet/Dockerfile   -t platform/wallet:dev .
 ```
 
 ### Observabilidad (perfil `obs`)
@@ -89,7 +91,7 @@ docker compose -f infrastructure/compose/compose.yml --profile obs up -d
 ### Despliegue en servidor OMV (Docker)
 
 Stack completo publicado en el servidor de la LAN con **todos los puertos en el
-rango 40000–40100**: web `40000` · gateway `40001` · identity `40002` · audit `40003` · market-data `40004` · ledger `40005` · accounts `40006`
+rango 40000–40100**: web `40000` · gateway `40001` · identity `40002` · audit `40003` · market-data `40004` · ledger `40005` · accounts `40006` · wallet `40007`
 · datos `40010–40012` (solo `127.0.0.1` del servidor) · observabilidad `40020–40024`.
 
 ```bash
@@ -108,8 +110,8 @@ cd /opt/platform && docker compose -f deploy/compose.yml up -d
 | `docs/component-status.md` | Matriz de clasificación de componentes (IMPLEMENTADO/PARCIAL/…) |
 | `packages/platform-kernel/` | Núcleo Python compartido (config, errores, auth, dinero, logs, métricas) |
 | `packages/platform-contracts/` | Contratos: roles, envelope de eventos, headers, esquemas de auditoría |
-| `services/gateway` · `identity` · `audit` · `market-data` · `ledger` · `accounts` | Microservicios (uno por bounded context, schema propio) |
-| `tests/` | Suite cruzada: unit, integration (PostgreSQL real), e2e (6 servidores reales) |
+| `services/gateway` · `identity` · `audit` · `market-data` · `ledger` · `accounts` · `wallet` | Microservicios (uno por bounded context, schema propio) |
+| `tests/` | Suite cruzada: unit, integration (PostgreSQL real), e2e (7 servidores reales) |
 | `apps/web/` | Frontend shell Next.js 15 (npm workspaces, TS estricto, Tailwind 4, PWA) |
 | `infrastructure/compose/` | Stack local (postgres:5433, redis, redpanda, perfiles `events`/`obs`) |
 | `infrastructure/monitoring/` | OTel Collector, Prometheus, Loki, Tempo, Alloy y Grafana (dashboard RED) |

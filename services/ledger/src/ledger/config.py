@@ -25,6 +25,8 @@ class LedgerSettings(KernelSettings):
     outbox_max_attempts: int = 5
     outbox_batch_size: int = 100
 
+    event_consumer_enabled: bool = True
+
     idempotency_ttl_seconds: int = IDEMPOTENCY_TTL_SECONDS
 
 

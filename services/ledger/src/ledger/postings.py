@@ -188,6 +188,8 @@ class ResolvedEntry:
     amount: Decimal
     currency: str
     reverses_entry_id: uuid.UUID | None = None
+    owner_id: uuid.UUID | None = None
+    owner_type: str | None = None
 
 
 # --------------------------------------------------------------------------- reglas
@@ -373,6 +375,8 @@ def build_ledger_posted_payload(
                 "direction": entry.direction,
                 "amount": canonical_amount(entry.amount),
                 "currency": entry.currency,
+                "owner_id": str(entry.owner_id) if entry.owner_id is not None else None,
+                "owner_type": entry.owner_type,
             }
             for entry in entries
         ],

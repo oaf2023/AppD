@@ -87,6 +87,17 @@ components:
           format: uuid
           title: Entry Id
           type: string
+        owner_id:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          title: Owner Id
+        owner_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Owner Type
         position:
           title: Position
           type: integer
@@ -105,6 +116,20 @@ components:
       - amount
       - currency
       title: EntryOut
+      type: object
+    EntryPageOut:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/PublicEntryOut'
+          title: Data
+          type: array
+        page:
+          $ref: '#/components/schemas/PageInfo'
+      required:
+      - data
+      - page
+      title: EntryPageOut
       type: object
     HTTPValidationError:
       properties:
@@ -127,6 +152,64 @@ components:
       - service
       - status
       title: HealthOut
+      type: object
+    OwnerBalance:
+      description: Saldo de un propietario en una moneda (créditos - débitos, L §4.1).
+      properties:
+        balance:
+          title: Balance
+          type: string
+        currency:
+          title: Currency
+          type: string
+        owner_id:
+          format: uuid
+          title: Owner Id
+          type: string
+      required:
+      - owner_id
+      - currency
+      - balance
+      title: OwnerBalance
+      type: object
+    OwnerBalancesOut:
+      properties:
+        as_of:
+          format: date-time
+          title: As Of
+          type: string
+        data:
+          items:
+            $ref: '#/components/schemas/OwnerBalance'
+          title: Data
+          type: array
+      required:
+      - data
+      - as_of
+      title: OwnerBalancesOut
+      type: object
+    PageInfo:
+      description: 'Q-api-map §1.4: cursor opaco, sin offset.'
+      properties:
+        has_more:
+          default: false
+          title: Has More
+          type: boolean
+        limit:
+          default: 25
+          title: Limit
+          type: integer
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Next Cursor
+        prev_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Prev Cursor
+      title: PageInfo
       type: object
     PostingOut:
       description: Transacción ledger con sus asientos (respuesta de creación y de
@@ -249,6 +332,71 @@ components:
       - entries
       title: PostingsIn
       type: object
+    PublicEntryOut:
+      description: Asiento propio con el contexto de su transacción (extractos y listados).
+      properties:
+        account_code:
+          title: Account Code
+          type: string
+        account_id:
+          format: uuid
+          title: Account Id
+          type: string
+        amount:
+          title: Amount
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        currency:
+          title: Currency
+          type: string
+        direction:
+          enum:
+          - D
+          - C
+          title: Direction
+          type: string
+        entry_id:
+          format: uuid
+          title: Entry Id
+          type: string
+        occurred_at:
+          format: date-time
+          title: Occurred At
+          type: string
+        transaction_id:
+          format: uuid
+          title: Transaction Id
+          type: string
+        tx_type:
+          enum:
+          - deposit
+          - withdrawal
+          - transfer
+          - conversion
+          - fee
+          - swap
+          - pnl
+          - margin_funding
+          - reversal
+          - adjustment
+          title: Tx Type
+          type: string
+      required:
+      - entry_id
+      - transaction_id
+      - account_id
+      - account_code
+      - direction
+      - amount
+      - currency
+      - tx_type
+      - occurred_at
+      - created_at
+      title: PublicEntryOut
+      type: object
     ReadyOut:
       properties:
         status:
@@ -257,6 +405,105 @@ components:
       required:
       - status
       title: ReadyOut
+      type: object
+    StatementOut:
+      properties:
+        as_of:
+          format: date-time
+          title: As Of
+          type: string
+        closing_balance:
+          title: Closing Balance
+          type: string
+        currency:
+          title: Currency
+          type: string
+        entries:
+          items:
+            $ref: '#/components/schemas/PublicEntryOut'
+          title: Entries
+          type: array
+        entries_count:
+          title: Entries Count
+          type: integer
+        opening_balance:
+          title: Opening Balance
+          type: string
+        page:
+          $ref: '#/components/schemas/PageInfo'
+        period:
+          $ref: '#/components/schemas/StatementPeriod'
+        statement_id:
+          title: Statement Id
+          type: string
+      required:
+      - statement_id
+      - period
+      - currency
+      - opening_balance
+      - closing_balance
+      - entries_count
+      - entries
+      - page
+      - as_of
+      title: StatementOut
+      type: object
+    StatementPageOut:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/StatementSummaryOut'
+          title: Data
+          type: array
+        page:
+          $ref: '#/components/schemas/PageInfo'
+      required:
+      - data
+      - page
+      title: StatementPageOut
+      type: object
+    StatementPeriod:
+      properties:
+        from:
+          format: date-time
+          title: From
+          type: string
+        to:
+          format: date-time
+          title: To
+          type: string
+      required:
+      - from
+      - to
+      title: StatementPeriod
+      type: object
+    StatementSummaryOut:
+      properties:
+        closing_balance:
+          title: Closing Balance
+          type: string
+        currency:
+          title: Currency
+          type: string
+        entries_count:
+          title: Entries Count
+          type: integer
+        opening_balance:
+          title: Opening Balance
+          type: string
+        period:
+          $ref: '#/components/schemas/StatementPeriod'
+        statement_id:
+          title: Statement Id
+          type: string
+      required:
+      - statement_id
+      - period
+      - currency
+      - opening_balance
+      - closing_balance
+      - entries_count
+      title: StatementSummaryOut
       type: object
     ValidationError:
       properties:
@@ -289,6 +536,170 @@ info:
   version: 0.1.0
 openapi: 3.1.0
 paths:
+  /api/v1/ledger/entries:
+    get:
+      description: Lista los asientos de las cuentas propias en `[from, to)` (orden
+        `(created_at, id)` desc).
+      operationId: list_entries_api_v1_ledger_entries_get
+      parameters:
+      - description: Inicio del rango (obligatorio, ≤ 90 días)
+        in: query
+        name: from
+        required: true
+        schema:
+          description: Inicio del rango (obligatorio, ≤ 90 días)
+          format: date-time
+          title: From
+          type: string
+      - description: Fin del rango (obligatorio)
+        in: query
+        name: to
+        required: true
+        schema:
+          description: Fin del rango (obligatorio)
+          format: date-time
+          title: To
+          type: string
+      - in: query
+        name: account_id
+        required: false
+        schema:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          title: Account Id
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 25
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cursor
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntryPageOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Asientos propios por rango (cursor, §2.6)
+      tags:
+      - ledger
+  /api/v1/ledger/statements:
+    get:
+      description: 'Meses con actividad de las cuentas propias, del más reciente al
+        más antiguo.
+
+
+        El cursor codifica `(mes, moneda)`; los saldos se derivan de los asientos
+
+        (Σcréditos - Σdébitos acumulados) sin tabla de saldos materializada (L §10).'
+      operationId: list_statements_api_v1_ledger_statements_get
+      parameters:
+      - in: query
+        name: currency
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 3
+            pattern: ^[A-Z]{3}$
+            type: string
+          - type: 'null'
+          title: Currency
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 25
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cursor
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatementPageOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Extractos mensuales por moneda (cursor, §2.6)
+      tags:
+      - ledger
+  /api/v1/ledger/statements/{statement_id}:
+    get:
+      description: 'Detalle de un extracto mensual: `statement_id` con formato `YYYY-MM-<MONEDA>`.'
+      operationId: get_statement_api_v1_ledger_statements__statement_id__get
+      parameters:
+      - in: path
+        name: statement_id
+        required: true
+        schema:
+          title: Statement Id
+          type: string
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 100
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cursor
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatementOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Extracto con asientos y saldo inicial/final (§2.6)
+      tags:
+      - ledger
   /healthz:
     get:
       operationId: healthz_healthz_get
@@ -302,6 +713,47 @@ paths:
       summary: Healthz
       tags:
       - system
+  /internal/v1/balances:
+    get:
+      description: 'Σ(créditos) - Σ(débitos) por propietario y moneda sobre cuentas
+        no control (L §4.1).
+
+
+        Consumido por `accounts` (saldo previo en cierre/recarga de la demo) y por
+        `wallet`
+
+        (reconciliador BUILD-019). Token de servicio obligatorio (Q-api-map §3).'
+      operationId: read_owner_balances_internal_v1_balances_get
+      parameters:
+      - description: Propietario a consultar; ausente = todos los propietarios (reconciliación
+          wallet).
+        in: query
+        name: owner_id
+        required: false
+        schema:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          description: Propietario a consultar; ausente = todos los propietarios (reconciliación
+            wallet).
+          title: Owner Id
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerBalancesOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Balances por propietario (fuente de verdad para wallet, cierre y recarga)
+      tags:
+      - internal
   /internal/v1/postings:
     post:
       description: 'Crea una transacción ledger con sus asientos y su evento `LedgerPosted`.

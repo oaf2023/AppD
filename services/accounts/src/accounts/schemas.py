@@ -34,6 +34,7 @@ class AccountOut(BaseModel):
     leverage: int | None = None
     created_at: datetime
     updated_at: datetime
+    closed_at: datetime | None = None
 
 
 def account_out(account: TradingAccount) -> AccountOut:
@@ -48,6 +49,7 @@ def account_out(account: TradingAccount) -> AccountOut:
         leverage=account.leverage,
         created_at=account.created_at,
         updated_at=account.updated_at,
+        closed_at=account.closed_at,
     )
 
 
@@ -79,6 +81,21 @@ class AccountPatchIn(BaseModel):
     alias: str | None = Field(default=None, max_length=64)
 
 
+class ReloadDemoOut(BaseModel):
+    """POST /api/v1/accounts/{id}/reload-demo — recarga de la demo (BUILD-020).
+
+    El saldo real lo aplica ledger vía `DemoBalanceReset` (#17); aquí se
+    devuelve el objetivo y el saldo previo leído de la fuente de verdad.
+    """
+
+    account_id: uuid.UUID
+    currency: str
+    previous_balance: str
+    new_balance: str
+    status: Literal["scheduled"] = "scheduled"
+    event_id: str
+
+
 class UserProfile(BaseModel):
     """Perfil mínimo devuelto por `identity` en `GET /internal/v1/users/{id}` (§3)."""
 
@@ -98,6 +115,7 @@ __all__ = [
     "HealthOut",
     "PageInfo",
     "ReadyOut",
+    "ReloadDemoOut",
     "UserProfile",
     "account_out",
 ]

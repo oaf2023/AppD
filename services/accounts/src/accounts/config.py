@@ -20,6 +20,10 @@ class AccountsSettings(KernelSettings):
     identity_url: str = "http://127.0.0.1:8081"
     identity_timeout_seconds: float = 5.0
 
+    #: Saldo/cierre leen la fuente de verdad (Q §3); la escritura es event-driven (#16/#17).
+    ledger_url: str = "http://127.0.0.1:8085"
+    ledger_timeout_seconds: float = 5.0
+
     redpanda_bootstrap_servers: str = "127.0.0.1:19092"
 
     outbox_relay_enabled: bool = True

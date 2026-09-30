@@ -28,11 +28,15 @@ os.environ.update(
         "AUDIT_DATABASE_URL": "postgresql+psycopg://platform:platform_local_dev_only@127.0.0.1:5433/platform_audit",
         "LEDGER_DATABASE_URL": "postgresql+psycopg://platform:platform_local_dev_only@127.0.0.1:5433/platform_ledger",
         "ACCOUNTS_DATABASE_URL": "postgresql+psycopg://platform:platform_local_dev_only@127.0.0.1:5433/platform_accounts",
+        "WALLET_DATABASE_URL": "postgresql+psycopg://platform:platform_local_dev_only@127.0.0.1:5433/platform_wallet",
         "IDENTITY_URL": "http://127.0.0.1:18081",
         "AUDIT_URL": "http://127.0.0.1:18083",
         "MARKET_DATA_URL": "http://127.0.0.1:18084",
         "LEDGER_URL": "http://127.0.0.1:18085",
         "ACCOUNTS_URL": "http://127.0.0.1:18086",
+        "WALLET_URL": "http://127.0.0.1:18087",
+        # reconciliador off en tests: se ejercita con `Reconciler.run_once` directo
+        "WALLET_RECONCILE_INTERVAL_SECONDS": "0",
         "FLAG_MFA": "true",
         "REQUIRE_EMAIL_VERIFICATION": "true",
         # límites generosos: el rate limit se prueba a nivel unitario

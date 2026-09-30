@@ -67,7 +67,7 @@ jobs:
       - name: Crear bases por servicio
         run: |
           export PGPASSWORD=platform_local_dev_only
-          for db in platform_identity platform_audit platform_gateway platform_ledger platform_accounts; do
+          for db in platform_identity platform_audit platform_gateway platform_ledger platform_accounts platform_wallet; do
             psql -h localhost -p 5433 -U platform -d platform -c "CREATE DATABASE ${db};"
           done
       - name: Levantar Redpanda
@@ -142,7 +142,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Construir imágenes
         run: |
-          for svc in gateway identity audit market-data ledger accounts; do
+          for svc in gateway identity audit market-data ledger accounts wallet; do
             docker build -f "services/${svc}/Dockerfile" -t "platform/${svc}:ci" .
           done
       - name: SBOM por imagen (syft)
@@ -150,7 +150,7 @@ jobs:
           curl -sSfL https://github.com/anchore/syft/releases/download/v1.52.0/syft_1.52.0_linux_amd64.tar.gz \
             | tar -xz -C /usr/local/bin syft
           mkdir -p sbom
-          for svc in gateway identity audit market-data ledger accounts; do
+          for svc in gateway identity audit market-data ledger accounts wallet; do
             syft "platform/${svc}:ci" -o "spdx-json=sbom/${svc}.spdx.json" --quiet
           done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -162,7 +162,7 @@ jobs:
         run: |
           curl -sSfL https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz \
             | tar -xz -C /usr/local/bin trivy
-          for svc in gateway identity audit market-data ledger accounts; do
+          for svc in gateway identity audit market-data ledger accounts wallet; do
             trivy image --severity CRITICAL --exit-code 1 --scanners vuln "platform/${svc}:ci"
           done
 

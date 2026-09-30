@@ -366,3 +366,181 @@ async def test_consumidor_omite_payload_invalido(accounts_client) -> None:  # ty
     factory = get_session_factory()
     async with factory() as session:
         assert await provision_demo_from_event(session, settings, envelope) is False
+
+
+# ---------------------------------------------------------------------- cierre (Q §2.4, F2.3)
+
+
+async def _create_demo(accounts_client, user_id: str) -> dict[str, Any]:  # type: ignore[no-untyped-def]
+    response = await accounts_client.post("/api/v1/accounts", json={}, headers=_auth(user_id, idem=True))
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+async def test_close_saldo_cero_cierra_y_emite_account_closed(accounts_app, accounts_client) -> None:  # type: ignore[no-untyped-def]
+    user_id = str(uuid.uuid4())
+    account = await _create_demo(accounts_client, user_id)
+
+    # sin sesión → 401
+    anonima = await accounts_client.post(f"/api/v1/accounts/{account['account_id']}/close")
+    assert anonima.status_code == 401
+
+    # saldo real 0 en ledger (fuente de verdad, Q §3): el cierre procede
+    closed = await accounts_client.post(
+        f"/api/v1/accounts/{account['account_id']}/close",
+        headers=_auth(user_id, idem=True),
+    )
+    assert closed.status_code == 200, closed.text
+    body = closed.json()
+    assert body["status"] == "closed"
+    assert body["closed_at"] is not None
+
+    rows = await _outbox_rows(account["account_id"])
+    closed_events = [row for row in rows if row.event_type == ev.ACCOUNT_CLOSED]
+    assert len(closed_events) == 1
+    assert closed_events[0].payload["account_id"] == account["account_id"]
+    assert closed_events[0].payload["user_id"] == user_id
+    assert closed_events[0].payload["currency"] == "USD"
+
+    # segunda vez → 409 (ya cerrada)
+    again = await accounts_client.post(
+        f"/api/v1/accounts/{account['account_id']}/close",
+        headers=_auth(user_id, idem=True),
+    )
+    assert again.status_code == 409
+
+
+async def test_close_bloqueado_por_saldo_no_cero(accounts_app, accounts_client) -> None:  # type: ignore[no-untyped-def]
+    user_id = str(uuid.uuid4())
+    account = await _create_demo(accounts_client, user_id)
+    accounts_app.state.ledger_balances[(user_id, "USD")] = "123.45"
+
+    response = await accounts_client.post(
+        f"/api/v1/accounts/{account['account_id']}/close",
+        headers=_auth(user_id, idem=True),
+    )
+    assert response.status_code == 409
+    assert response.json()["type"] == "urn:platform:error:conflict"
+    assert "saldo cero" in response.json()["detail"]
+
+    rows = await _outbox_rows(account["account_id"])
+    assert not [row for row in rows if row.event_type == ev.ACCOUNT_CLOSED]
+
+    # la cuenta sigue activa
+    detail = await accounts_client.get(f"/api/v1/accounts/{account['account_id']}", headers=_auth(user_id))
+    assert detail.json()["status"] == "active"
+
+
+async def test_close_bola_y_live_no_habilitado(accounts_app, accounts_client) -> None:  # type: ignore[no-untyped-def]
+    owner = str(uuid.uuid4())
+    account = await _create_demo(accounts_client, owner)
+
+    # recurso ajeno → 404 (mismo que inexistente, §1.7.3)
+    foreign = await accounts_client.post(
+        f"/api/v1/accounts/{account['account_id']}/close",
+        headers=_auth(str(uuid.uuid4()), idem=True),
+    )
+    assert foreign.status_code == 404
+
+    # cuenta LIVE → 403 tipado (cierre LIVE requiere KYC, F6)
+    live_user = uuid.uuid4()
+    await _insert_live_accounts(live_user, 1)
+    live = await accounts_client.get("/api/v1/accounts", headers=_auth(str(live_user)))
+    live_id = live.json()["data"][0]["account_id"]
+    live_close = await accounts_client.post(
+        f"/api/v1/accounts/{live_id}/close",
+        headers=_auth(str(live_user), idem=True),
+    )
+    assert live_close.status_code == 403
+    assert live_close.json()["type"] == "urn:platform:error:live-not-enabled"
+
+
+# ---------------------------------------------------------------------- recarga (BUILD-020, F2.3)
+
+
+async def test_reload_requiere_idempotency_key(accounts_client) -> None:  # type: ignore[no-untyped-def]
+    user_id = str(uuid.uuid4())
+    account = await _create_demo(accounts_client, user_id)
+    account_id = account["account_id"]
+
+    auth = _auth(user_id)
+    sin_clave = await accounts_client.post(f"/api/v1/accounts/{account_id}/reload-demo", headers=auth)
+    assert sin_clave.status_code == 400
+    assert sin_clave.json()["type"] == "urn:platform:error:validation"
+
+    bad = await accounts_client.post(
+        f"/api/v1/accounts/{account_id}/reload-demo",
+        headers={**auth, "Idempotency-Key": "no-es-uuid"},
+    )
+    assert bad.status_code == 400
+
+
+async def test_reload_emite_demo_balance_reset_y_replay(accounts_app, accounts_client) -> None:  # type: ignore[no-untyped-def]
+    user_id = str(uuid.uuid4())
+    account = await _create_demo(accounts_client, user_id)
+    account_id = account["account_id"]
+    accounts_app.state.ledger_balances[(user_id, "USD")] = "123.45"  # saldo previo real
+
+    key = str(uuid.uuid4())
+    headers = {**_auth(user_id), "Idempotency-Key": key}
+    response = await accounts_client.post(f"/api/v1/accounts/{account_id}/reload-demo", headers=headers)
+    assert response.status_code == 202, response.text
+    assert response.headers["Idempotent-Replay"] == "false"
+    body = response.json()
+    assert body["status"] == "scheduled"
+    assert body["currency"] == "USD"
+    assert body["previous_balance"] == "123.45"  # canónico ADR-0006
+    assert body["new_balance"] == "10000"  # demo_initial_balance
+    assert body["event_id"]
+
+    rows = await _outbox_rows(account_id)
+    resets = [row for row in rows if row.event_type == ev.DEMO_BALANCE_RESET]
+    assert len(resets) == 1
+    payload = resets[0].payload
+    assert payload["user_id"] == user_id
+    assert payload["currency"] == "USD"
+    assert payload["new_balance"] == "10000"
+    assert payload["previous_balance"] == "123.45"
+    assert payload["triggered_by"] == "user"
+
+    # replay: misma respuesta, un solo evento (#17)
+    replay = await accounts_client.post(f"/api/v1/accounts/{account_id}/reload-demo", headers=headers)
+    assert replay.status_code == 202
+    assert replay.headers["Idempotent-Replay"] == "true"
+    assert replay.json() == body
+    rows = await _outbox_rows(account_id)
+    assert len([row for row in rows if row.event_type == ev.DEMO_BALANCE_RESET]) == 1
+
+
+async def test_reload_rechaza_cuentas_no_demo_o_cerradas(accounts_app, accounts_client) -> None:  # type: ignore[no-untyped-def]
+    user_id = str(uuid.uuid4())
+    account = await _create_demo(accounts_client, user_id)
+    account_id = account["account_id"]
+
+    # cerrar con saldo cero y luego recargar → 409
+    cerrada = await accounts_client.post(f"/api/v1/accounts/{account_id}/close", headers=_auth(user_id, idem=True))
+    assert cerrada.status_code == 200
+    reload_cerrada = await accounts_client.post(
+        f"/api/v1/accounts/{account_id}/reload-demo",
+        headers={**_auth(user_id), "Idempotency-Key": str(uuid.uuid4())},
+    )
+    assert reload_cerrada.status_code == 409
+
+    # cuenta LIVE → 409 (sólo demo recargable)
+    live_user = uuid.uuid4()
+    await _insert_live_accounts(live_user, 1)
+    live_id = (await accounts_client.get("/api/v1/accounts", headers=_auth(str(live_user)))).json()["data"][0][
+        "account_id"
+    ]
+    reload_live = await accounts_client.post(
+        f"/api/v1/accounts/{live_id}/reload-demo",
+        headers={**_auth(str(live_user)), "Idempotency-Key": str(uuid.uuid4())},
+    )
+    assert reload_live.status_code == 409
+
+    # BOLA: otro usuario no recarga esta cuenta
+    ajena = await accounts_client.post(
+        f"/api/v1/accounts/{account_id}/reload-demo",
+        headers={**_auth(str(uuid.uuid4())), "Idempotency-Key": str(uuid.uuid4())},
+    )
+    assert ajena.status_code == 404

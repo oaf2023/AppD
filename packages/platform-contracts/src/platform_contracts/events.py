@@ -26,6 +26,10 @@ LEDGER_POSTED = "LedgerPosted"
 ACCOUNT_CREATED = "AccountCreated"
 DEMO_ACCOUNT_CREATED = "DemoAccountCreated"
 
+# Fase 2 (catálogo P #17 y #39): publicados por `accounts` en su outbox.
+DEMO_BALANCE_RESET = "DemoBalanceReset"
+ACCOUNT_CLOSED = "AccountClosed"
+
 SCHEMA_VERSION = 1
 
 EVENT_TYPES: dict[str, int] = {
@@ -45,6 +49,8 @@ EVENT_TYPES_PHASE2: dict[str, int] = {
     LEDGER_POSTED: 1,
     ACCOUNT_CREATED: 1,
     DEMO_ACCOUNT_CREATED: 1,
+    DEMO_BALANCE_RESET: 1,
+    ACCOUNT_CLOSED: 1,
 }
 
 EVENT_AGGREGATE_TYPE: dict[str, str] = {
@@ -60,6 +66,8 @@ EVENT_AGGREGATE_TYPE: dict[str, str] = {
     LEDGER_POSTED: "LedgerTransaction",
     ACCOUNT_CREATED: "TradingAccount",
     DEMO_ACCOUNT_CREATED: "TradingAccount",
+    DEMO_BALANCE_RESET: "TradingAccount",
+    ACCOUNT_CLOSED: "TradingAccount",
 }
 
 
@@ -96,11 +104,15 @@ PHASE2_TOPICS: tuple[str, ...] = (
     topic_for_event("ledger", EVENT_AGGREGATE_TYPE[LEDGER_POSTED], LEDGER_POSTED),
     topic_for_event("accounts", EVENT_AGGREGATE_TYPE[ACCOUNT_CREATED], ACCOUNT_CREATED),
     topic_for_event("accounts", EVENT_AGGREGATE_TYPE[DEMO_ACCOUNT_CREATED], DEMO_ACCOUNT_CREATED),
+    topic_for_event("accounts", EVENT_AGGREGATE_TYPE[DEMO_BALANCE_RESET], DEMO_BALANCE_RESET),
+    topic_for_event("accounts", EVENT_AGGREGATE_TYPE[ACCOUNT_CLOSED], ACCOUNT_CLOSED),
 )
 
 __all__ = [
+    "ACCOUNT_CLOSED",
     "ACCOUNT_CREATED",
     "DEMO_ACCOUNT_CREATED",
+    "DEMO_BALANCE_RESET",
     "EVENT_AGGREGATE_TYPE",
     "EVENT_TYPES",
     "EVENT_TYPES_PHASE2",

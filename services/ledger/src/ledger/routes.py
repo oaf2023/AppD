@@ -9,14 +9,16 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Response
+from fastapi import APIRouter, Depends, Header, Query, Response
 from platform_kernel.auth import require_service
+from platform_kernel.clock import utcnow
 from platform_kernel.errors import AppError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ledger.db import get_session
-from ledger.schemas import HealthOut, PostingOut, PostingsIn, ReadyOut
-from ledger.store import get_posting, post_transaction
+from ledger.postings import canonical_amount
+from ledger.schemas import HealthOut, OwnerBalance, OwnerBalancesOut, PostingOut, PostingsIn, ReadyOut
+from ledger.store import compute_owner_balances, get_posting, post_transaction
 
 router = APIRouter()
 
@@ -107,6 +109,35 @@ async def read_posting(
     service: Annotated[str, Depends(require_service)],
 ) -> PostingOut:
     return await get_posting(session, posting_id)
+
+
+@router.get(
+    "/internal/v1/balances",
+    response_model=OwnerBalancesOut,
+    tags=["internal"],
+    summary="Balances por propietario (fuente de verdad para wallet, cierre y recarga)",
+)
+async def read_owner_balances(
+    session: SessionDep,
+    service: Annotated[str, Depends(require_service)],
+    owner_id: uuid.UUID | None = Query(
+        default=None,
+        description="Propietario a consultar; ausente = todos los propietarios (reconciliación wallet).",
+    ),
+) -> OwnerBalancesOut:
+    """Σ(créditos) - Σ(débitos) por propietario y moneda sobre cuentas no control (L §4.1).
+
+    Consumido por `accounts` (saldo previo en cierre/recarga de la demo) y por `wallet`
+    (reconciliador BUILD-019). Token de servicio obligatorio (Q-api-map §3).
+    """
+    rows = await compute_owner_balances(session, owner_id)
+    return OwnerBalancesOut(
+        data=[
+            OwnerBalance(owner_id=owner, currency=currency, balance=canonical_amount(balance))
+            for owner, currency, balance in rows
+        ],
+        as_of=utcnow(),
+    )
 
 
 __all__ = ["router"]

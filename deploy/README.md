@@ -15,6 +15,7 @@ hostname `sq2`, x86_64). Todos los puertos publicados caen dentro del rango
 | 40004   | market-data     | LAN (0.0.0.0)| Snapshot público de mercados (`/api/v1/market-data/overview`) |
 | 40005   | ledger          | LAN (0.0.0.0)| API interna de asientos double-entry (`/internal/v1/postings`) |
 | 40006   | accounts        | LAN (0.0.0.0)| API de cuentas de trading (`/api/v1/accounts`) |
+| 40007   | wallet          | LAN (0.0.0.0)| Proyección de saldos y transferencias (`/api/v1/wallet`) |
 | 40010   | PostgreSQL 17   | 127.0.0.1    | datos (túnel SSH para operaciones)     |
 | 40011   | Redis 7         | 127.0.0.1    | caché/sesiones                         |
 | 40012   | Redpanda 19092  | 127.0.0.1    | Kafka externo (rpk desde el servidor)  |
@@ -41,15 +42,16 @@ docker compose -f deploy/compose.yml up -d                 # núcleo
 docker compose -f deploy/compose.yml --profile obs up -d   # + observabilidad
 ```
 
-- Las migraciones Alembic de identity, audit, ledger y accounts se ejecutan
-  automáticamente al arrancar sus contenedores (comando previo a `uvicorn`).
-- Las bases `platform_ledger` y `platform_accounts` hay que crearlas una sola vez
-  en servidores ya inicializados: el volumen `pgdata` existente no re-ejecuta
-  `initdb/001_databases.sql`.
+- Las migraciones de identity, audit, ledger y accounts (Alembic) y el esquema de
+  `wallet` (`create_all` + seed de `currency_config`) se ejecutan automáticamente
+  al arrancar sus contenedores (comando previo a `uvicorn`).
+- Las bases `platform_ledger`, `platform_accounts` y `platform_wallet` hay que
+  crearlas una sola vez en servidores ya inicializados: el volumen `pgdata`
+  existente no re-ejecuta `initdb/001_databases.sql`.
   ```bash
   docker compose -f deploy/compose.yml exec postgres \
     psql -U platform -d platform \
-    -c "CREATE DATABASE platform_ledger; CREATE DATABASE platform_accounts;"
+    -c "CREATE DATABASE platform_ledger; CREATE DATABASE platform_accounts; CREATE DATABASE platform_wallet;"
   ```
 - El consumidor de `accounts` (`auto_offset_reset=earliest`) crea la cuenta demo
   de **todos** los usuarios ya registrados al arrancar (backfill intencionado:
@@ -61,7 +63,7 @@ docker compose -f deploy/compose.yml --profile obs up -d   # + observabilidad
 
 ```bash
 docker compose -f deploy/compose.yml ps
-docker compose -f deploy/compose.yml logs -f gateway identity audit market-data ledger accounts web
+docker compose -f deploy/compose.yml logs -f gateway identity audit market-data ledger accounts wallet web
 docker compose -f deploy/compose.yml restart web
 docker compose -f deploy/compose.yml down        # para (los volúmenes persisten)
 ```

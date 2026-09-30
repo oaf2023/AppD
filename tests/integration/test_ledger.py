@@ -10,14 +10,19 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+import platform_contracts.events as ev
 import pytest
 from helpers import lifespan_client
+from ledger.config import get_ledger_settings
+from ledger.consumer import client_account_code, fund_demo_from_event, reset_demo_balance_from_event
 from ledger.db import get_session_factory
 from ledger.models import LedgerEntry, LedgerTransaction, OutboxEvent
 from platform_contracts.events import topic_for_event
+from platform_kernel.events import build_event
 from platform_kernel.security.tokens import new_access_token, new_service_token
 from sqlalchemy import func, select, text
 
@@ -76,6 +81,27 @@ def _access_token(roles: list[str]) -> str:
         audience="platform-api",
         ttl_seconds=900,
     )
+
+
+def _user_token(user_id: uuid.UUID) -> str:
+    return new_access_token(
+        user_id=str(user_id),
+        session_id=str(uuid.uuid4()),
+        roles=["user"],
+        secret=os.environ["JWT_SECRET"],
+        issuer="platform-identity",
+        audience="platform-api",
+        ttl_seconds=900,
+    )
+
+
+def _range_days(days: int = 1) -> dict[str, str]:
+    """Rango `[now-days, now+1d)` para cubrir `created_at = now()` de la BD."""
+    now = datetime.now(UTC)
+    return {
+        "from": (now - timedelta(days=days)).isoformat(),
+        "to": (now + timedelta(days=1)).isoformat(),
+    }
 
 
 def _body(**overrides: Any) -> dict[str, Any]:
@@ -543,3 +569,339 @@ async def test_metrica_de_postings_se_incrementa(ledger_client) -> None:  # type
 
     after = REGISTRY.get_sample_value("platform_ledger_postings_total", {"type": "deposit"})
     assert after is not None and after > before
+
+
+# ----------------------------------------------------------------- balances internos (Q §3, F2.3)
+
+
+async def test_balances_internos_requiere_token_de_servicio(ledger_client) -> None:  # type: ignore[no-untyped-def]
+    anonimo = await ledger_client.get("/internal/v1/balances")
+    assert anonimo.status_code == 401
+
+    usuario = await ledger_client.get(
+        "/internal/v1/balances",
+        headers={"Authorization": f"Bearer {_access_token(['user'])}"},
+    )
+    assert usuario.status_code == 401
+
+    ok = await ledger_client.get("/internal/v1/balances", headers=HEADERS)
+    assert ok.status_code == 200
+    body = ok.json()
+    assert isinstance(body["data"], list)
+    assert body["as_of"]
+
+
+async def test_balances_internos_refleja_postings(ledger_client) -> None:  # type: ignore[no-untyped-def]
+    owner = uuid.uuid4()
+    body = _body(
+        entries=[
+            {"account_code": CONTROL_ASSET, "direction": "D", "amount": "250.50", "currency": "USD"},
+            {
+                "account_code": client_account_code("USD", owner),
+                "direction": "C",
+                "amount": "250.50",
+                "currency": "USD",
+                "owner_id": str(owner),
+            },
+        ]
+    )
+    response = await _post(ledger_client, body, key=str(uuid.uuid4()))
+    assert response.status_code == 201
+
+    filtrado = await ledger_client.get(
+        "/internal/v1/balances",
+        params={"owner_id": str(owner)},
+        headers=HEADERS,
+    )
+    assert filtrado.status_code == 200
+    # sólo cuentas no control (L §4.1): la de control queda fuera
+    assert filtrado.json()["data"] == [{"owner_id": str(owner), "currency": "USD", "balance": "250.5"}]
+
+    todos = await ledger_client.get("/internal/v1/balances", headers=HEADERS)
+    assert any(row["owner_id"] == str(owner) and row["balance"] == "250.5" for row in todos.json()["data"])
+
+
+# ----------------------------------------------------------------- consumidor demo #16/#17 (F2.3)
+
+
+def _demo_envelope(event_type: str, payload: dict[str, Any]) -> Any:  # type: ignore[no-untyped-def]
+    return build_event(
+        event_type=event_type,
+        schema_version=ev.EVENT_TYPES_PHASE2[event_type],
+        aggregate_id=str(uuid.uuid4()),
+        aggregate_type=ev.EVENT_AGGREGATE_TYPE[event_type],
+        producer="accounts",
+        payload=payload,
+    )
+
+
+async def test_consumidor_fondea_demo_idempotente(ledger_client) -> None:  # type: ignore[no-untyped-def]
+    settings = get_ledger_settings()
+    user_id = uuid.uuid4()
+    envelope = _demo_envelope(
+        ev.DEMO_ACCOUNT_CREATED,
+        {"user_id": str(user_id), "currency": "USD", "initial_balance": "10000"},
+    )
+
+    factory = get_session_factory()
+    async with factory() as session:
+        assert await fund_demo_from_event(session, settings, envelope) is True
+    # reentrega at-least-once: la idempotencia (ADR-0010) evita el doble fondeo
+    async with factory() as session:
+        assert await fund_demo_from_event(session, settings, envelope) is False
+
+    balances = await ledger_client.get(
+        "/internal/v1/balances",
+        params={"owner_id": str(user_id)},
+        headers=HEADERS,
+    )
+    assert balances.json()["data"] == [{"owner_id": str(user_id), "currency": "USD", "balance": "10000"}]
+
+    # payload inválido y balance no positivo → False (sin romper el consumer)
+    invalido = _demo_envelope(ev.DEMO_ACCOUNT_CREATED, {"currency": "USD"})
+    async with factory() as session:
+        assert await fund_demo_from_event(session, settings, invalido) is False
+    no_positivo = _demo_envelope(
+        ev.DEMO_ACCOUNT_CREATED,
+        {"user_id": str(uuid.uuid4()), "currency": "USD", "initial_balance": "0"},
+    )
+    async with factory() as session:
+        assert await fund_demo_from_event(session, settings, no_positivo) is False
+
+
+async def test_consumidor_reinicia_saldo_con_delta(ledger_client) -> None:  # type: ignore[no-untyped-def]
+    settings = get_ledger_settings()
+    user_id = uuid.uuid4()
+    factory = get_session_factory()
+
+    fund = _demo_envelope(
+        ev.DEMO_ACCOUNT_CREATED,
+        {"user_id": str(user_id), "currency": "USD", "initial_balance": "10000"},
+    )
+    async with factory() as session:
+        assert await fund_demo_from_event(session, settings, fund) is True
+
+    reset = _demo_envelope(
+        ev.DEMO_BALANCE_RESET,
+        {"user_id": str(user_id), "currency": "USD", "new_balance": "7500"},
+    )
+    async with factory() as session:
+        assert await reset_demo_balance_from_event(session, settings, reset) is True
+    # misma reentrega → idempotente
+    async with factory() as session:
+        assert await reset_demo_balance_from_event(session, settings, reset) is False
+
+    balances = await ledger_client.get(
+        "/internal/v1/balances",
+        params={"owner_id": str(user_id)},
+        headers=HEADERS,
+    )
+    assert balances.json()["data"][0]["balance"] == "7500"
+
+    # sin delta (otro event_id con el mismo objetivo) → False, sin asiento
+    sin_delta = _demo_envelope(
+        ev.DEMO_BALANCE_RESET,
+        {"user_id": str(user_id), "currency": "USD", "new_balance": "7500"},
+    )
+    async with factory() as session:
+        assert await reset_demo_balance_from_event(session, settings, sin_delta) is False
+
+    # delta positivo (subida de saldo de la demo)
+    subida = _demo_envelope(
+        ev.DEMO_BALANCE_RESET,
+        {"user_id": str(user_id), "currency": "USD", "new_balance": "12000"},
+    )
+    async with factory() as session:
+        assert await reset_demo_balance_from_event(session, settings, subida) is True
+    balances = await ledger_client.get(
+        "/internal/v1/balances",
+        params={"owner_id": str(user_id)},
+        headers=HEADERS,
+    )
+    assert balances.json()["data"][0]["balance"] == "12000"
+
+    # payload inválido y saldo negativo → False
+    invalido = _demo_envelope(ev.DEMO_BALANCE_RESET, {"user_id": str(user_id)})
+    async with factory() as session:
+        assert await reset_demo_balance_from_event(session, settings, invalido) is False
+    negativo = _demo_envelope(
+        ev.DEMO_BALANCE_RESET,
+        {"user_id": str(user_id), "currency": "USD", "new_balance": "-1"},
+    )
+    async with factory() as session:
+        assert await reset_demo_balance_from_event(session, settings, negativo) is False
+
+
+# ------------------------------------------------------------------------ API pública (Q §2.6, F2.3)
+
+
+async def test_public_entries_exige_sesion_y_rango(ledger_client) -> None:  # type: ignore[no-untyped-def]
+    anonimo = await ledger_client.get("/api/v1/ledger/entries", params=_range_days())
+    assert anonimo.status_code == 401
+
+    token = _user_token(uuid.uuid4())
+    headers = {"Authorization": f"Bearer {token}"}
+    sin_rango = await ledger_client.get("/api/v1/ledger/entries", headers=headers)
+    assert sin_rango.status_code == 422
+
+    invertido = await ledger_client.get(
+        "/api/v1/ledger/entries", params={"from": "2026-09-02T00:00:00Z", "to": "2026-09-01T00:00:00Z"}, headers=headers
+    )
+    assert invertido.status_code == 422
+
+    excesivo = await ledger_client.get(
+        "/api/v1/ledger/entries",
+        params={"from": "2020-01-01T00:00:00Z", "to": "2026-12-01T00:00:00Z"},
+        headers=headers,
+    )
+    assert excesivo.status_code == 422
+    assert "90" in excesivo.json()["detail"]
+
+
+async def test_public_entries_lista_asientos_propios_y_bola(ledger_client) -> None:  # type: ignore[no-untyped-def]
+    owner = uuid.uuid4()
+    other = uuid.uuid4()
+
+    def _deposit(account_owner: uuid.UUID, amount: str) -> dict[str, Any]:
+        return _body(
+            entries=[
+                {"account_code": CONTROL_ASSET, "direction": "D", "amount": amount, "currency": "USD"},
+                {
+                    "account_code": client_account_code("USD", account_owner),
+                    "direction": "C",
+                    "amount": amount,
+                    "currency": "USD",
+                    "owner_id": str(account_owner),
+                },
+            ]
+        )
+
+    propio = await _post(ledger_client, _deposit(owner, "1000.00"), key=str(uuid.uuid4()))
+    assert propio.status_code == 201
+    ajeno = await _post(ledger_client, _deposit(other, "500.00"), key=str(uuid.uuid4()))
+    assert ajeno.status_code == 201
+    cuenta_propia = next(e["account_id"] for e in propio.json()["entries"] if e["direction"] == "C")
+    cuenta_ajena = next(e["account_id"] for e in ajeno.json()["entries"] if e["direction"] == "C")
+
+    headers = {"Authorization": f"Bearer {_user_token(owner)}"}
+    response = await ledger_client.get("/api/v1/ledger/entries", params=_range_days(), headers=headers)
+    assert response.status_code == 200
+    rows = response.json()["data"]
+    assert rows, "el owner debe ver sus propios asientos"
+    assert {row["amount"] for row in rows} == {"1000"}
+    assert all(row["account_code"] == client_account_code("USD", owner) for row in rows)
+
+    # BOLA §1.7.3: cuenta ajena, inexistente o de otro usuario → 404 idéntico
+    ajena_filtro = await ledger_client.get(
+        "/api/v1/ledger/entries",
+        params={**_range_days(), "account_id": cuenta_ajena},
+        headers=headers,
+    )
+    assert ajena_filtro.status_code == 404
+
+    inexistente = await ledger_client.get(
+        "/api/v1/ledger/entries",
+        params={**_range_days(), "account_id": str(uuid.uuid4())},
+        headers=headers,
+    )
+    assert inexistente.status_code == 404
+    # misma respuesta tipada (S §1.7.3): sólo difieren los ids de correlación de cada request
+    assert {k: v for k, v in inexistente.json().items() if k not in ("correlation_id", "request_id")} == {
+        k: v for k, v in ajena_filtro.json().items() if k not in ("correlation_id", "request_id")
+    }
+
+    ajeno_token = await ledger_client.get(
+        "/api/v1/ledger/entries",
+        params={**_range_days(), "account_id": cuenta_propia},
+        headers={"Authorization": f"Bearer {_user_token(uuid.uuid4())}"},
+    )
+    assert ajeno_token.status_code == 404
+
+
+async def test_public_entries_cursor_sin_duplicados(ledger_client) -> None:  # type: ignore[no-untyped-def]
+    owner = uuid.uuid4()
+    for _ in range(2):
+        body = _body(
+            entries=[
+                {"account_code": CONTROL_ASSET, "direction": "D", "amount": "10.00", "currency": "USD"},
+                {
+                    "account_code": client_account_code("USD", owner),
+                    "direction": "C",
+                    "amount": "10.00",
+                    "currency": "USD",
+                    "owner_id": str(owner),
+                },
+            ]
+        )
+        assert (await _post(ledger_client, body, key=str(uuid.uuid4()))).status_code == 201
+
+    headers = {"Authorization": f"Bearer {_user_token(owner)}"}
+    page1 = await ledger_client.get("/api/v1/ledger/entries", params={**_range_days(), "limit": 1}, headers=headers)
+    assert page1.status_code == 200
+    assert page1.json()["page"]["has_more"] is True
+    cursor = page1.json()["page"]["next_cursor"]
+    assert cursor
+
+    page2 = await ledger_client.get(
+        "/api/v1/ledger/entries", params={**_range_days(), "limit": 1, "cursor": cursor}, headers=headers
+    )
+    assert page2.status_code == 200
+    assert page2.json()["page"]["has_more"] is False
+    ids1 = {row["entry_id"] for row in page1.json()["data"]}
+    ids2 = {row["entry_id"] for row in page2.json()["data"]}
+    assert ids1 and ids2 and not (ids1 & ids2)
+
+
+async def test_public_statements_resumen_y_detalle(ledger_client) -> None:  # type: ignore[no-untyped-def]
+    owner = uuid.uuid4()
+    body = _body(
+        entries=[
+            {"account_code": CONTROL_ASSET, "direction": "D", "amount": "300.00", "currency": "USD"},
+            {
+                "account_code": client_account_code("USD", owner),
+                "direction": "C",
+                "amount": "300.00",
+                "currency": "USD",
+                "owner_id": str(owner),
+            },
+        ]
+    )
+    assert (await _post(ledger_client, body, key=str(uuid.uuid4()))).status_code == 201
+    headers = {"Authorization": f"Bearer {_user_token(owner)}"}
+
+    listing = await ledger_client.get("/api/v1/ledger/statements", headers=headers)
+    assert listing.status_code == 200
+    items = listing.json()["data"]
+    assert len(items) == 1
+    statement_id = items[0]["statement_id"]
+    assert statement_id == f"{datetime.now(UTC):%Y-%m}-USD"
+    assert items[0]["opening_balance"] == "0"
+    assert items[0]["closing_balance"] == "300"
+    assert items[0]["entries_count"] == 1
+
+    # filtro por moneda
+    otras = await ledger_client.get("/api/v1/ledger/statements", params={"currency": "EUR"}, headers=headers)
+    assert otras.json()["data"] == []
+
+    detail = await ledger_client.get(f"/api/v1/ledger/statements/{statement_id}", headers=headers)
+    assert detail.status_code == 200
+    body_detail = detail.json()
+    assert body_detail["opening_balance"] == "0"
+    assert body_detail["closing_balance"] == "300"
+    assert body_detail["entries_count"] == 1
+    assert len(body_detail["entries"]) == 1
+    assert body_detail["entries"][0]["amount"] == "300"
+    assert body_detail["as_of"]
+
+    mal_formado = await ledger_client.get("/api/v1/ledger/statements/XX-USD", headers=headers)
+    assert mal_formado.status_code == 422
+
+    desconocido = await ledger_client.get("/api/v1/ledger/statements/2019-01-USD", headers=headers)
+    assert desconocido.status_code == 404
+
+    # BOLA: otro usuario no ve el extracto ni el detalle
+    ajeno_headers = {"Authorization": f"Bearer {_user_token(uuid.uuid4())}"}
+    ajeno_list = await ledger_client.get("/api/v1/ledger/statements", headers=ajeno_headers)
+    assert ajeno_list.json()["data"] == []
+    ajeno_detail = await ledger_client.get(f"/api/v1/ledger/statements/{statement_id}", headers=ajeno_headers)
+    assert ajeno_detail.status_code == 404

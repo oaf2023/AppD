@@ -39,6 +39,8 @@ def create_app(*, auto_migrate: bool | None = None) -> FastAPI:
         app.state.idempotency = await build_idempotency_store(settings.redis_url)
         # Cliente HTTP hacia identity (Q §3); los tests lo sustituyen por un doble.
         app.state.identity_client = None
+        # Cliente HTTP hacia ledger (saldo en cierre/recarga, Q §3); costura de tests.
+        app.state.ledger_client = None
 
         from accounts.db import get_session_factory
 

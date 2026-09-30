@@ -77,6 +77,8 @@ class EntryOut(BaseModel):
     amount: str
     currency: str
     reverses_entry_id: uuid.UUID | None = None
+    owner_id: uuid.UUID | None = None
+    owner_type: str | None = None
 
 
 class PostingOut(BaseModel):
@@ -102,12 +104,94 @@ class ReadyOut(BaseModel):
     status: str
 
 
+# --------------------------------------------------------------- balances internos (§3)
+
+
+class OwnerBalance(BaseModel):
+    """Saldo de un propietario en una moneda (créditos - débitos, L §4.1)."""
+
+    owner_id: uuid.UUID
+    currency: str
+    balance: str
+
+
+class OwnerBalancesOut(BaseModel):
+    data: list[OwnerBalance]
+    as_of: datetime
+
+
+# ------------------------------------------------- superficie pública (Q-api-map §2.6)
+
+
+class PageInfo(BaseModel):
+    """Q-api-map §1.4: cursor opaco, sin offset."""
+
+    next_cursor: str | None = None
+    prev_cursor: str | None = None
+    has_more: bool = False
+    limit: int = 25
+
+
+class PublicEntryOut(BaseModel):
+    """Asiento propio con el contexto de su transacción (extractos y listados)."""
+
+    entry_id: uuid.UUID
+    transaction_id: uuid.UUID
+    account_id: uuid.UUID
+    account_code: str
+    direction: Literal["D", "C"]
+    amount: str
+    currency: str
+    tx_type: TxType
+    occurred_at: datetime
+    created_at: datetime
+
+
+class EntryPageOut(BaseModel):
+    data: list[PublicEntryOut]
+    page: PageInfo
+
+
+class StatementPeriod(BaseModel):
+    period_from: datetime = Field(serialization_alias="from")
+    period_to: datetime = Field(serialization_alias="to")
+
+
+class StatementSummaryOut(BaseModel):
+    statement_id: str
+    period: StatementPeriod
+    currency: str
+    opening_balance: str
+    closing_balance: str
+    entries_count: int
+
+
+class StatementPageOut(BaseModel):
+    data: list[StatementSummaryOut]
+    page: PageInfo
+
+
+class StatementOut(StatementSummaryOut):
+    entries: list[PublicEntryOut]
+    page: PageInfo
+    as_of: datetime
+
+
 __all__ = [
     "EntryIn",
     "EntryOut",
+    "EntryPageOut",
     "HealthOut",
+    "OwnerBalance",
+    "OwnerBalancesOut",
+    "PageInfo",
     "PostingOut",
     "PostingsIn",
+    "PublicEntryOut",
     "ReadyOut",
+    "StatementOut",
+    "StatementPageOut",
+    "StatementPeriod",
+    "StatementSummaryOut",
     "TxType",
 ]

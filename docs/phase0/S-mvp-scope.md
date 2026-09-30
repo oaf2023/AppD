@@ -41,8 +41,11 @@ Este documento define el **alcance mínimo verificable** del MVP (Minimum Viable
 | **Notification (demo)** | Email (adapter mock), in-app, preferencias básicas | `PENDIENTE` |
 
 > `Estado Inicial` = snapshot al inicio de la Fase 1 (Regla de oro §1). Progreso real
-> al 2026-09-30: **Ledger** F2.1 `IMPLEMENTADO` y **Accounts** F2.2 `IMPLEMENTADO`
-> ( Wallet, Market Data avanzado, Trading/Risk/Notification siguen `PENDIENTE` );
+> al 2026-09-30: **Ledger** F2.1 `IMPLEMENTADO`, **Accounts** F2.2 `IMPLEMENTADO` y
+> **Wallet** F2.3 `IMPLEMENTADO` (balances proyectados desde el ledger con reconciliador,
+> movimientos con referencia al asiento, transferencias internas idempotentes,
+> extractos JSON §2.6, cierre de cuenta con saldo cero y recarga de demo vía
+> evento #17; Market Data avanzado, Trading/Risk/Notification siguen `PENDIENTE` );
 > fuente: `docs/component-status.md`.
 
 ---
@@ -119,15 +122,15 @@ Este documento define el **alcance mínimo verificable** del MVP (Minimum Viable
 | # | Criterio | Verificación | Estado |
 |---|----------|--------------|--------|
 | 4.1 | Crear cuenta demo desde dashboard | `POST /accounts/demo` → 201, cuenta en BD `accounts`, evento `DemoAccountCreated` | `PENDIENTE` |
-| 4.2 | Saldo virtual inicial (ej. USD 10,000) visible en wallet | `GET /wallet/balances` → `{"USD": "10000.00"}`; verificado contra ledger | `PENDIENTE` |
+| 4.2 | Saldo virtual inicial (ej. USD 10,000) visible en wallet | `GET /api/v1/wallet/balances` → `{"USD": "10000"}` (canónico ADR-0006) tras el fondeo #16; conciliación automática ledger↔wallet (reconciliador) | `IMPLEMENTADO` (F2.3, integration `test_wallet`) |
 | 4.3 | Consulta mercados (símbolos demo) + gráfico candles 1m/5m/1h | `GET /market-data/symbols` → lista; `WS /market-data/stream` → ticks/candles en tiempo real | `PENDIENTE` |
 | 4.4 | Orden demo: market buy EUR/USD 1.0 lot → ejecución simulada | `POST /trading/orders` → 201, `status=filled`, posición abierta, evento `OrderFilled` | `PENDIENTE` |
 | 4.5 | Posición abierta → PnL tiempo real actualizado cada tick | `GET /trading/positions` → `unrealized_pnl` cambia con ticks | `PENDIENTE` |
 | 4.6 | SL/TP configurables al crear orden o editar posición | `POST /trading/orders?sl=1.0850&tp=1.0950` → SL/TP activos; trigger → cierre automático | `PENDIENTE` |
 | 4.7 | Cierre manual posición → realized PnL en wallet/ledger | `POST /trading/positions/{id}/close` → 200, asiento ledger `realized_pnl`, balance actualizado | `PENDIENTE` |
 | 4.8 | Historial: órdenes, posiciones cerradas, PnL realizado | `GET /trading/history` → paginado, filtros, export CSV | `PENDIENTE` |
-| 4.9 | Wallet → movimientos (depósito virtual, trade, fee, PnL, retiro virtual) | `GET /wallet/transactions` → lista con tipos, referencias a ledger | `PENDIENTE` |
-| 4.10 | Ledger: asientos inmutables, double-entry, conciliación balance = suma asientos | Query SQL: `SELECT SUM(credit-debit) FROM ledger.entries WHERE account_id=X` = wallet balance | `PENDIENTE` |
+| 4.9 | Wallet → movimientos (depósito virtual, trade, fee, PnL, retiro virtual) | `GET /api/v1/wallet/transactions` → lista con `tx_type` y `ledger_transaction_id` (cursor, `from`/`to` ≤90 d) | `IMPLEMENTADO` (F2.3; tipos según eventos de la Fase 4+) |
+| 4.10 | Ledger: asientos inmutables, double-entry, conciliación balance = suma asientos | Query SQL: `SELECT SUM(credit-debit) FROM ledger.entries WHERE account_id=X` = wallet balance (reconciliador `wallet` + `GET /internal/v1/balances`) | `IMPLEMENTADO` (F2.1+F2.3) |
 | 4.11 | API Key (read-only demo) + WebSocket streaming | `POST /api-keys` → key + secret; `WS /v1/stream?api_key=` → market data + account updates | `PENDIENTE` |
 | 4.12 | Statement PDF/CSV mensual (demo) | `GET /statements/monthly?month=2026-09` → 200, archivo generado en S3 (mock), link firmado | `PENDIENTE` |
 | 4.13 | Backoffice admin: ver usuarios, cuentas, balances, órdenes, ledger entries | Admin shell → MFE `admin-users`, `admin-accounts`, `admin-ledger` con datos reales | `PENDIENTE` |

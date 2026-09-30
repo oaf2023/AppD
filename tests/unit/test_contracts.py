@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from platform_contracts.events import (
+    ACCOUNT_CLOSED,
     ACCOUNT_CREATED,
     DEMO_ACCOUNT_CREATED,
+    DEMO_BALANCE_RESET,
     EVENT_AGGREGATE_TYPE,
     EVENT_TYPES,
     EVENT_TYPES_PHASE2,
@@ -65,12 +67,28 @@ def test_eventos_de_cuentas_fase2() -> None:
     assert EVENT_TYPES_PHASE2[ACCOUNT_CREATED] == EVENT_TYPES_PHASE2[DEMO_ACCOUNT_CREATED] == SCHEMA_VERSION == 1
     assert ACCOUNT_CREATED not in EVENT_TYPES
     assert DEMO_ACCOUNT_CREATED not in EVENT_TYPES
-    assert PHASE2_TOPICS == (
+    assert PHASE2_TOPICS[:3] == (
         "ledger.ledger_transaction.ledger_posted",
         "accounts.trading_account.account_created",
         "accounts.trading_account.demo_account_created",
     )
-    assert len(PHASE2_TOPICS) == 3
+    assert len(PHASE2_TOPICS) == 5  # F2.3 añade #17/#39
+
+
+def test_eventos_de_recarga_y_cierre_fase2() -> None:
+    """Catálogo P #17/#39: `DemoBalanceReset`/`AccountClosed` (F2.3, servicio accounts)."""
+    assert DEMO_BALANCE_RESET == "DemoBalanceReset"
+    assert ACCOUNT_CLOSED == "AccountClosed"
+    assert EVENT_AGGREGATE_TYPE[DEMO_BALANCE_RESET] == "TradingAccount"
+    assert EVENT_AGGREGATE_TYPE[ACCOUNT_CLOSED] == "TradingAccount"
+    assert EVENT_TYPES_PHASE2[DEMO_BALANCE_RESET] == EVENT_TYPES_PHASE2[ACCOUNT_CLOSED] == SCHEMA_VERSION == 1
+    assert DEMO_BALANCE_RESET not in EVENT_TYPES
+    assert ACCOUNT_CLOSED not in EVENT_TYPES
+    assert "accounts.trading_account.demo_balance_reset" in PHASE2_TOPICS
+    assert "accounts.trading_account.account_closed" in PHASE2_TOPICS
+    assert len(EVENT_TYPES_PHASE2) == 5
+    assert len(PHASE2_TOPICS) == 5
+    assert len(set(PHASE2_TOPICS)) == 5
 
 
 def test_headers_de_identidad_no_se_confian_al_cliente() -> None:

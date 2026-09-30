@@ -36,6 +36,12 @@ components:
           - type: string
           - type: 'null'
           title: Alias
+        closed_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Closed At
         created_at:
           format: date-time
           title: Created At
@@ -160,6 +166,43 @@ components:
           title: Status
           type: string
       title: ReadyOut
+      type: object
+    ReloadDemoOut:
+      description: 'POST /api/v1/accounts/{id}/reload-demo — recarga de la demo (BUILD-020).
+
+
+        El saldo real lo aplica ledger vía `DemoBalanceReset` (#17); aquí se
+
+        devuelve el objetivo y el saldo previo leído de la fuente de verdad.'
+      properties:
+        account_id:
+          format: uuid
+          title: Account Id
+          type: string
+        currency:
+          title: Currency
+          type: string
+        event_id:
+          title: Event Id
+          type: string
+        new_balance:
+          title: New Balance
+          type: string
+        previous_balance:
+          title: Previous Balance
+          type: string
+        status:
+          const: scheduled
+          default: scheduled
+          title: Status
+          type: string
+      required:
+      - account_id
+      - currency
+      - previous_balance
+      - new_balance
+      - event_id
+      title: ReloadDemoOut
       type: object
     ValidationError:
       properties:
@@ -360,6 +403,89 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Ajustes permitidos de la cuenta (alias)
+      tags:
+      - accounts
+  /api/v1/accounts/{account_id}/close:
+    post:
+      description: 'Cierra la cuenta demo si su saldo real en ledger es cero (§2.4).
+
+
+        Saldo distinto de cero → `409`; KYC + step-up MFA diferidos a F6 (se
+
+        requiere sólo sesión de usuario). `Idempotency-Key` opcional (UUID).'
+      operationId: close_account_api_v1_accounts__account_id__close_post
+      parameters:
+      - in: path
+        name: account_id
+        required: true
+        schema:
+          format: uuid
+          title: Account Id
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Idempotency-Key
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Cierre de cuenta con saldo cero (§2.4, F2.3)
+      tags:
+      - accounts
+  /api/v1/accounts/{account_id}/reload-demo:
+    post:
+      description: 'Emite `DemoBalanceReset` (#17): ledger ajusta el saldo y la wallet
+        lo proyecta.
+
+
+        `Idempotency-Key` obligatorio (UUID, ADR-0010); el replay devuelve la
+
+        misma respuesta con `Idempotent-Replay: true`.'
+      operationId: reload_demo_api_v1_accounts__account_id__reload_demo_post
+      parameters:
+      - in: path
+        name: account_id
+        required: true
+        schema:
+          format: uuid
+          title: Account Id
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Idempotency-Key
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReloadDemoOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Recarga de la demo al saldo inicial (BUILD-020, F2.3)
       tags:
       - accounts
   /healthz:

@@ -36,6 +36,7 @@ def clean_dbs(pg_available: None) -> None:
     _reset_database("platform_audit", ["audit"])
     _reset_database("platform_ledger", ["ledger"])
     _reset_database("platform_accounts", ["accounts"])
+    _reset_database("platform_wallet", ["wallet"])
 
 
 @pytest.fixture(scope="session")

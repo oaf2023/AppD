@@ -38,7 +38,7 @@ Proyecto: `MonedasAR` · Dominio: `[DOMAIN]` · Marca: `MonedasAR`
 
 ---
 
-## 2. Catálogo Inicial (37 Eventos)
+## 2. Catálogo Inicial (39 Eventos)
 
 > **Clasificación de datos**: `PUBLIC` (sin datos sensibles), `INTERNAL` (operacional), `CONFIDENTIAL` (financiero/PII/regulatorio).  
 > **Criticidad**: `CRITICAL` (dinero/riesgo/regulatorio), `HIGH` (core trading), `MEDIUM` (operacional), `LOW` (auditoría/analytics).
@@ -60,8 +60,8 @@ Proyecto: `MonedasAR` · Dominio: `[DOMAIN]` · Marca: `MonedasAR`
 | 13 | **KycSubmitted** | 1 | kyc | audit, accounts, risk, notification | KycCase | `kyc_case_id`, `user_id`, `account_id`, `provider`, `document_types[]` | CONFIDENTIAL | CRITICAL |
 | 14 | **KycApproved** | 1 | kyc | audit, accounts, wallet, trading, risk, notification | KycCase | `kyc_case_id`, `user_id`, `account_id`, `tier`, `approved_at`, `expires_at` | CONFIDENTIAL | CRITICAL |
 | 15 | **KycRejected** | 1 | kyc | audit, accounts, notification | KycCase | `kyc_case_id`, `user_id`, `account_id`, `reason`, `retry_allowed` | CONFIDENTIAL | CRITICAL |
-| 16 | **DemoAccountCreated** | 1 | accounts | audit, wallet, trading | TradingAccount | `account_id`, `user_id`, `initial_balance`, `currency`, `expires_at` | INTERNAL | MEDIUM |
-| 17 | **DemoBalanceReset** | 1 | accounts | audit, wallet, trading, ledger | TradingAccount | `account_id`, `user_id`, `old_balance`, `new_balance`, `reset_at` | CONFIDENTIAL | MEDIUM |
+| 16 | **DemoAccountCreated** | 1 | accounts | audit, wallet, ledger, trading | TradingAccount | `account_id`, `user_id`, `initial_balance`, `currency`, `expires_at` | INTERNAL | MEDIUM |
+| 17 | **DemoBalanceReset** | 1 | accounts | audit, wallet, trading, ledger | TradingAccount | `account_id`, `user_id`, `currency`, `previous_balance`, `new_balance`, `triggered_by` | CONFIDENTIAL | MEDIUM |
 | 18 | **DepositRequested** | 1 | payments | audit, wallet, ledger, risk, notification | Deposit | `deposit_id`, `user_id`, `account_id`, `amount`, `currency`, `psp`, `method`, `callback_url` | CONFIDENTIAL | CRITICAL |
 | 19 | **DepositCompleted** | 1 | payments | audit, wallet, ledger, trading, risk, notification | Deposit | `deposit_id`, `user_id`, `account_id`, `amount`, `currency`, `psp_ref`, `ledger_tx_id`, `completed_at` | CONFIDENTIAL | CRITICAL |
 | 20 | **DepositFailed** | 1 | payments | audit, wallet, risk, notification | Deposit | `deposit_id`, `user_id`, `account_id`, `amount`, `currency`, `error_code`, `error_msg`, `retryable` | CONFIDENTIAL | HIGH |
@@ -82,9 +82,10 @@ Proyecto: `MonedasAR` · Dominio: `[DOMAIN]` · Marca: `MonedasAR`
 | 35 | **PnlRealized** | 1 | trading | audit, wallet, ledger, risk, notification | Position | `position_id`, `account_id`, `symbol`, `realized_pnl`, `currency`, `ledger_tx_id`, `realized_at` | CONFIDENTIAL | CRITICAL |
 | 36 | **FeeCharged** | 1 | trading | audit, wallet, ledger, risk, notification | Order/Position | `charge_id`, `account_id`, `type` (commission/spread/financing), `amount`, `currency`, `ledger_tx_id`, `charged_at` | CONFIDENTIAL | CRITICAL |
 | 37 | **SwapApplied** | 1 | trading | audit, wallet, ledger, risk, notification | Position | `swap_id`, `account_id`, `symbol`, `side`, `swap_points`, `amount`, `currency`, `ledger_tx_id`, `applied_at` | CONFIDENTIAL | CRITICAL |
-| 38 | **LedgerPosted** | 1 | ledger | audit, wallet, risk, reporting, admin | LedgerTransaction | `transaction_id`, `type`, `correlation_id`, `occurred_at`, `entries[]` (account_id, direction, amount, currency) | CONFIDENTIAL | CRITICAL |
+| 38 | **LedgerPosted** | 1 | ledger | audit, wallet, risk, reporting, admin | LedgerTransaction | `transaction_id`, `type`, `correlation_id`, `occurred_at`, `entries[]` (account_id, direction, amount, currency, owner_id, owner_type) | CONFIDENTIAL | CRITICAL |
+| 39 | **AccountClosed** | 1 | accounts | audit, wallet, trading | TradingAccount | `account_id`, `user_id`, `currency`, `closed_at` | CONFIDENTIAL | HIGH |
 
-> **Total: 38 eventos** (supera mínimo 30). Eventos 1-11 = Fase 1 (identity). 12-17 = Fase 2 (accounts). 18-24 = Fase 2/6 (payments→wallet/ledger). 25-38 = Fase 4 (trading/risk/ledger).
+> **Total: 39 eventos** (supera mínimo 30). Eventos 1-11 = Fase 1 (identity). 12-17 y 39 = Fase 2 (accounts). 18-24 = Fase 2/6 (payments→wallet/ledger). 25-38 = Fase 4 (trading/risk/ledger).
 
 ---
 
@@ -179,6 +180,7 @@ async def handle_event(event: EventEnvelope, session: AsyncSession):
 | MfaEnabled/Disabled | CONFIDENTIAL | `mfa_type` | Auditar cambios de seguridad |
 | ApiKeyCreated/Revoked | CONFIDENTIAL | `scopes`, `ip_whitelist` | `api_key` **nunca** en evento (solo `api_key_id`); secret solo en respuesta creación |
 | AccountCreated | CONFIDENTIAL | `jurisdiction`, `leverage` | Datos regulatorios |
+| AccountClosed | CONFIDENTIAL | `user_id`, `closed_at` | Cierre de relación comercial; auditar con `account_id` |
 | KycSubmitted/Approved/Rejected | CONFIDENTIAL | `document_types`, `tier`, `provider` | PII máximo; acceso solo compliance/risk |
 | Deposit/Withdrawal * | CONFIDENTIAL | `amount`, `currency`, `psp_ref`, `destination` | Dinero → máximo nivel |
 | Order/Position * | CONFIDENTIAL | `quantity`, `price`, `pnl`, `margin` | Posiciones y riesgo |
@@ -221,7 +223,7 @@ async def handle_event(event: EventEnvelope, session: AsyncSession):
 | Servicio | Eventos (cuenta) |
 |---|---|
 | `identity` | 11 (1–11) |
-| `accounts` | 4 (12, 16–17) |
+| `accounts` | 5 (12, 16–17, 39) |
 | `kyc` | 3 (13–15) |
 | `payments` | 7 (18–24) |
 | `trading` | 10 (25–31, 35–37) |

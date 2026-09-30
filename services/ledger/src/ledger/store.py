@@ -14,13 +14,14 @@ import logging
 import uuid
 from collections.abc import Sequence
 from datetime import timedelta
+from decimal import Decimal
 from typing import Literal, cast
 
 from platform_kernel.clock import utcnow
 from platform_kernel.errors import AppError, ConflictError, NotFoundError, ValidationError
 from platform_kernel.events import build_event
 from platform_kernel.ids import new_uuid7
-from sqlalchemy import select, text
+from sqlalchemy import case, func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -181,6 +182,8 @@ async def _run(
                 amount=fact.amount,
                 currency=fact.currency,
                 reverses_entry_id=fact.reverses_entry_id,
+                owner_id=fact.owner_id if fact.owner_type != "system" else None,
+                owner_type=fact.owner_type,
             )
         )
 
@@ -407,6 +410,36 @@ async def _store_outbox_event(
 # --------------------------------------------------------------------------- lectura
 
 
+async def compute_owner_balances(
+    session: AsyncSession,
+    owner_id: uuid.UUID | None = None,
+) -> list[tuple[uuid.UUID, str, Decimal]]:
+    """Saldo por propietario y moneda: Σ(créditos) - Σ(débitos) en cuentas no control.
+
+    Es la fuente de verdad que consumen el reconciliador `wallet` (BUILD-019) y el
+    cierre/recarga de cuentas (`GET /internal/v1/balances`, Q-api-map §3). Mismo criterio
+    de la vista `ledger_account_balances` de L §4.1.
+    """
+    stmt = (
+        select(
+            LedgerAccount.owner_id,
+            LedgerEntry.currency,
+            func.coalesce(
+                func.sum(case((LedgerEntry.direction == "C", LedgerEntry.amount), else_=-LedgerEntry.amount)),
+                Decimal(0),
+            ),
+        )
+        .join(LedgerAccount, LedgerEntry.account_id == LedgerAccount.id)
+        .where(LedgerAccount.is_control.is_(False))
+        .group_by(LedgerAccount.owner_id, LedgerEntry.currency)
+        .order_by(LedgerAccount.owner_id, LedgerEntry.currency)
+    )
+    if owner_id is not None:
+        stmt = stmt.where(LedgerAccount.owner_id == owner_id)
+    rows = (await session.execute(stmt)).all()
+    return [(row[0], row[1], row[2]) for row in rows]
+
+
 async def get_posting(session: AsyncSession, posting_id: uuid.UUID) -> PostingOut:
     """Recupera un posting por su `transaction_id` (Q-api-map §3)."""
     transaction = (
@@ -433,6 +466,8 @@ async def get_posting(session: AsyncSession, posting_id: uuid.UUID) -> PostingOu
             amount=entry.amount,
             currency=entry.currency,
             reverses_entry_id=entry.reverses_entry_id,
+            owner_id=None if account.owner_type == "system" else account.owner_id,
+            owner_type=account.owner_type,
         )
         for entry, account in rows
     ]
@@ -466,4 +501,6 @@ def _entry_out(entry: ResolvedEntry) -> EntryOut:
         amount=canonical_amount(entry.amount),
         currency=entry.currency,
         reverses_entry_id=entry.reverses_entry_id,
+        owner_id=entry.owner_id,
+        owner_type=entry.owner_type,
     )

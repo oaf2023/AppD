@@ -6,6 +6,19 @@ exige bump de versión **mayor**, entrada de deprecación con política `Sunset`
 anterior y guía de migración; los cambios aditivos (campos opcionales nuevos) usan bump menor.
 El gate de CI (`tools/export_openapi.py --check`) impide que el spec se aleje del código.
 
+## 0.5.0 — 2026-09-30
+
+### Añadido
+- `DEMO_BALANCE_RESET = "DemoBalanceReset"` (catálogo P #17) y `ACCOUNT_CLOSED =
+  "AccountClosed"` (catálogo P #39, nuevo), ambos con agregado `TradingAccount` y
+  `schema_version = 1`, publicados por `accounts` en su outbox (recarga y cierre de
+  cuenta demo, F2.3). `PHASE2_TOPICS` pasa de 3 a 5: `accounts.trading_account.demo_balance_reset`
+  y `accounts.trading_account.account_closed`.
+- `LedgerPosted` (#38) incorpora en cada entrada de `entries[]` los campos opcionales
+  `owner_id` y `owner_type` (aditivo; `schema_version` se mantiene en 1): la proyección
+  `wallet` necesita el propietario de cada asiento para aplicar el delta sin resolver
+  `account_id -> owner` en tiempo real.
+
 ## 0.4.0 — 2026-09-30
 
 ### Añadido

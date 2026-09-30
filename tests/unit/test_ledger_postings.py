@@ -460,7 +460,7 @@ def test_topic_de_ledger_posted() -> None:
 
 def test_payload_de_ledger_posted_con_importe_canonico() -> None:
     transaction_id = uuid.UUID("00000000-0000-0000-0000-0000000000f1")
-    entry = ResolvedEntry(
+    control = ResolvedEntry(
         entry_id=uuid.uuid4(),
         position=1,
         account_id=uuid.uuid4(),
@@ -469,18 +469,45 @@ def test_payload_de_ledger_posted_con_importe_canonico() -> None:
         amount=Decimal("1000.000000000000000000"),
         currency="USD",
     )
+    cliente = ResolvedEntry(
+        entry_id=uuid.uuid4(),
+        position=2,
+        account_id=uuid.uuid4(),
+        account_code=CLIENT_LIABILITY,
+        direction="C",
+        amount=Decimal("1000.000000000000000000"),
+        currency="USD",
+        owner_id=OWNER_A,
+        owner_type="user",
+    )
     payload = build_ledger_posted_payload(
         transaction_id=transaction_id,
         tx_type="deposit",
         correlation_id=CORRELATION,
         occurred_at=OCCURRED,
-        entries=[entry],
+        entries=[control, cliente],
     )
     assert payload["transaction_id"] == str(transaction_id)
     assert payload["type"] == "deposit"
     assert payload["occurred_at"] == OCCURRED.isoformat()
+    # P #38: owner_id/owner_type identifican al titular (wallet filtra por owner_type)
     assert payload["entries"] == [
-        {"account_id": str(entry.account_id), "direction": "D", "amount": "1000", "currency": "USD"}
+        {
+            "account_id": str(control.account_id),
+            "direction": "D",
+            "amount": "1000",
+            "currency": "USD",
+            "owner_id": None,
+            "owner_type": None,
+        },
+        {
+            "account_id": str(cliente.account_id),
+            "direction": "C",
+            "amount": "1000",
+            "currency": "USD",
+            "owner_id": str(OWNER_A),
+            "owner_type": "user",
+        },
     ]
 
 
