@@ -31,7 +31,7 @@ Proyecto: `MonedasAR` · Dominio: `[DOMAIN]` · Marca: `MonedasAR`
 | `accounts` | `accounts` | Trading/Accounts | `trading_accounts`, `profiles`, `jurisdictions`, `account_limits` (Fase 2) |
 | `wallet` | `wallet` | Trading/Wallet | `balances`, `balance_snapshots`, `currency_config` (Fase 2) |
 | `ledger` | `ledger` | Trading/Ledger | `ledger_accounts`, `ledger_transactions`, `ledger_entries`, `ledger_idempotency_keys`, `ledger_balance_snapshots`, `outbox_events` (Fase 2) |
-| `market-data` | `market_data` | Data/Market | `symbols`, `ticks`, `candles`, `instrument_specs` (Fase 3) |
+| `market-data` | `market_data` | Data/Market | `symbols`, `instrument_specs`, `trading_sessions`, `market_suspensions`, `market_holidays`, `outbox` (Fase 3), `ticks`, `candles` |
 | `trading` | `trading` | Trading/OMS | `orders`, `positions`, `executions`, `margin_accounts` (Fase 4) |
 | `risk` | `risk` | Risk/Engine | `limits`, `limit_breaches`, `circuit_breakers`, `kill_switches` (Fase 4) |
 | `payments` | `payments` | Payments/Integrations | `deposits`, `withdrawals`, `psp_adapters`, `payment_methods` (Fase 6) |
@@ -243,7 +243,7 @@ async def execute_in_tx(session: AsyncSession, fn: Callable):
 | `accounts` | 2 | `PENDIENTE` | `trading_accounts`, `profiles`, `jurisdictions`, `account_limits`, `account_statuses` (ref), `kyc_links` |
 | `wallet` | 2 | `PENDIENTE` | `balances`, `balance_snapshots`, `currency_config`, `conversion_rates` |
 | `ledger` | 2 | `PENDIENTE` | `ledger_accounts`, `ledger_transactions`, `ledger_entries`, `ledger_idempotency_keys`, `ledger_balance_snapshots`, `outbox_events` |
-| `market-data` | 3 | `IMPLEMENTADO` (parcial BUILD-027: `ticks`, `candles` en Postgres 17 plano; restan `symbols`, `instrument_specs`, `provider_status` + hypertables/retención = DECIDIR) | `symbols`, `ticks`, `candles`, `instrument_specs`, `provider_status` |
+| `market-data` | 3 | `IMPLEMENTADO` (parcial BUILD-027: `ticks`, `candles`; BUILD-028: `symbols`, `instrument_specs`, `trading_sessions`, `market_suspensions`, `market_holidays`, `outbox` con seed demo; restan `provider_status` + hypertables/retención = DECIDIR) | `symbols`, `ticks`, `candles`, `instrument_specs`, `trading_sessions`, `market_suspensions`, `market_holidays`, `outbox`, `provider_status` |
 | `trading` | 4 | `PENDIENTE` | `orders`, `positions`, `executions`, `margin_accounts`, `order_legs`, `position_history` |
 | `risk` | 4 | `PENDIENTE` | `limits`, `limit_breaches`, `circuit_breakers`, `kill_switches`, `risk_metrics_snapshots` |
 | `payments` | 6 | `PENDIENTE` | `deposits`, `withdrawals`, `psp_adapters`, `payment_methods`, `psp_webhooks`, `fee_schedules` |

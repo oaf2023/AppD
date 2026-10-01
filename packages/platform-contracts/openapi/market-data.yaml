@@ -81,6 +81,27 @@ components:
       - page
       title: CandlePageOut
       type: object
+    FeedBriefOut:
+      description: 'Estado del feed por símbolo (Q §2.7: `symbols` con estado del
+        feed).'
+      properties:
+        last_tick_ts:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Last Tick Ts
+        simulated:
+          title: Simulated
+          type: boolean
+        source:
+          title: Source
+          type: string
+      required:
+      - source
+      - simulated
+      title: FeedBriefOut
+      type: object
     FeedStatusOut:
       description: 'Estado del feed (Q §2.7): simulated/real, latencia y huecos detectados.'
       properties:
@@ -157,6 +178,267 @@ components:
       - version
       title: HealthOut
       type: object
+    InstrumentDetailOut:
+      description: Specs mínimos + parámetros complementarios (Q §2.8 `GET /instruments/{symbol}`).
+      properties:
+        asset_class:
+          enum:
+          - forex
+          - crypto
+          title: Asset Class
+          type: string
+        base_currency:
+          title: Base Currency
+          type: string
+        contract_size:
+          title: Contract Size
+          type: string
+        display_name:
+          title: Display Name
+          type: string
+        market:
+          $ref: '#/components/schemas/MarketStateOut'
+        max_volume:
+          title: Max Volume
+          type: string
+        min_volume:
+          title: Min Volume
+          type: string
+        pip_size:
+          title: Pip Size
+          type: string
+        price_precision:
+          title: Price Precision
+          type: integer
+        quote_currency:
+          title: Quote Currency
+          type: string
+        status:
+          enum:
+          - active
+          - paused
+          - delisted
+          title: Status
+          type: string
+        symbol:
+          title: Symbol
+          type: string
+        tick_size:
+          title: Tick Size
+          type: string
+        valid_from:
+          format: date-time
+          title: Valid From
+          type: string
+        version:
+          title: Version
+          type: integer
+        volume_step:
+          title: Volume Step
+          type: string
+      required:
+      - symbol
+      - display_name
+      - asset_class
+      - base_currency
+      - quote_currency
+      - status
+      - tick_size
+      - min_volume
+      - max_volume
+      - volume_step
+      - version
+      - valid_from
+      - pip_size
+      - contract_size
+      - price_precision
+      - market
+      title: InstrumentDetailOut
+      type: object
+    InstrumentOut:
+      description: Specs mínimos del instrumento (Q §2.8 `GET /instruments`).
+      properties:
+        asset_class:
+          enum:
+          - forex
+          - crypto
+          title: Asset Class
+          type: string
+        base_currency:
+          title: Base Currency
+          type: string
+        display_name:
+          title: Display Name
+          type: string
+        max_volume:
+          title: Max Volume
+          type: string
+        min_volume:
+          title: Min Volume
+          type: string
+        quote_currency:
+          title: Quote Currency
+          type: string
+        status:
+          enum:
+          - active
+          - paused
+          - delisted
+          title: Status
+          type: string
+        symbol:
+          title: Symbol
+          type: string
+        tick_size:
+          title: Tick Size
+          type: string
+        valid_from:
+          format: date-time
+          title: Valid From
+          type: string
+        version:
+          title: Version
+          type: integer
+        volume_step:
+          title: Volume Step
+          type: string
+      required:
+      - symbol
+      - display_name
+      - asset_class
+      - base_currency
+      - quote_currency
+      - status
+      - tick_size
+      - min_volume
+      - max_volume
+      - volume_step
+      - version
+      - valid_from
+      title: InstrumentOut
+      type: object
+    InstrumentPageOut:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/InstrumentOut'
+          title: Data
+          type: array
+        page:
+          $ref: '#/components/schemas/PageInfo'
+      required:
+      - data
+      - page
+      title: InstrumentPageOut
+      type: object
+    InstrumentSpecOut:
+      description: Spec completa vigente con sesiones y estado (Q §2.8 `GET .../specs`,
+        K §2).
+      properties:
+        asset_class:
+          enum:
+          - forex
+          - crypto
+          title: Asset Class
+          type: string
+        contract_size:
+          title: Contract Size
+          type: string
+        display_name:
+          title: Display Name
+          type: string
+        fee_schedule:
+          additionalProperties:
+            type: string
+          title: Fee Schedule
+          type: object
+        jurisdiction_restrictions:
+          items:
+            type: string
+          title: Jurisdiction Restrictions
+          type: array
+        margin_requirements:
+          additionalProperties:
+            type: string
+          title: Margin Requirements
+          type: object
+        market:
+          $ref: '#/components/schemas/MarketStateOut'
+        max_volume:
+          title: Max Volume
+          type: string
+        min_volume:
+          title: Min Volume
+          type: string
+        pip_size:
+          title: Pip Size
+          type: string
+        price_precision:
+          title: Price Precision
+          type: integer
+        sessions:
+          items:
+            $ref: '#/components/schemas/TradingSessionOut'
+          title: Sessions
+          type: array
+        status:
+          enum:
+          - active
+          - paused
+          - delisted
+          title: Status
+          type: string
+        swap_configuration:
+          additionalProperties:
+            anyOf:
+            - type: string
+            - type: boolean
+          title: Swap Configuration
+          type: object
+        symbol:
+          title: Symbol
+          type: string
+        tick_size:
+          title: Tick Size
+          type: string
+        valid_from:
+          format: date-time
+          title: Valid From
+          type: string
+        valid_to:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Valid To
+        version:
+          title: Version
+          type: integer
+        volume_step:
+          title: Volume Step
+          type: string
+      required:
+      - symbol
+      - display_name
+      - asset_class
+      - status
+      - version
+      - valid_from
+      - tick_size
+      - pip_size
+      - contract_size
+      - min_volume
+      - max_volume
+      - volume_step
+      - price_precision
+      - margin_requirements
+      - fee_schedule
+      - swap_configuration
+      - jurisdiction_restrictions
+      - sessions
+      - market
+      title: InstrumentSpecOut
+      type: object
     MarketClassOverview:
       properties:
         asset_class:
@@ -200,6 +482,41 @@ components:
       required:
       - classes
       title: MarketOverview
+      type: object
+    MarketStateOut:
+      description: Estado de mercado del símbolo (REQ-099, K §2).
+      properties:
+        as_of:
+          format: date-time
+          title: As Of
+          type: string
+        next_close:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Next Close
+        next_open:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Next Open
+        reason:
+          title: Reason
+          type: string
+        status:
+          enum:
+          - open
+          - closed
+          - halted
+          title: Status
+          type: string
+      required:
+      - status
+      - reason
+      - as_of
+      title: MarketStateOut
       type: object
     OverviewQuote:
       properties:
@@ -274,6 +591,68 @@ components:
           title: Prev Cursor
       title: PageInfo
       type: object
+    SymbolListOut:
+      properties:
+        as_of:
+          format: date-time
+          title: As Of
+          type: string
+        data:
+          items:
+            $ref: '#/components/schemas/SymbolOut'
+          title: Data
+          type: array
+        simulated:
+          title: Simulated
+          type: boolean
+      required:
+      - data
+      - simulated
+      - as_of
+      title: SymbolListOut
+      type: object
+    SymbolOut:
+      properties:
+        asset_class:
+          enum:
+          - forex
+          - crypto
+          title: Asset Class
+          type: string
+        base_currency:
+          title: Base Currency
+          type: string
+        display_name:
+          title: Display Name
+          type: string
+        feed:
+          $ref: '#/components/schemas/FeedBriefOut'
+        market:
+          $ref: '#/components/schemas/MarketStateOut'
+        quote_currency:
+          title: Quote Currency
+          type: string
+        status:
+          enum:
+          - active
+          - paused
+          - delisted
+          title: Status
+          type: string
+        symbol:
+          title: Symbol
+          type: string
+      required:
+      - symbol
+      - display_name
+      - asset_class
+      - base_currency
+      - quote_currency
+      - status
+      - market
+      - feed
+      title: SymbolOut
+      type: object
     TickOut:
       properties:
         price:
@@ -332,6 +711,45 @@ components:
       - page
       title: TickPageOut
       type: object
+    TradingSessionOut:
+      properties:
+        close_utc:
+          format: time
+          title: Close Utc
+          type: string
+        holiday_calendar:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Holiday Calendar
+        open_utc:
+          format: time
+          title: Open Utc
+          type: string
+        session_type:
+          enum:
+          - regular
+          - pre
+          - post
+          title: Session Type
+          type: string
+        timezone:
+          title: Timezone
+          type: string
+        weekday:
+          description: 'ISO weekday: lunes=0 … domingo=6'
+          maximum: 6.0
+          minimum: 0.0
+          title: Weekday
+          type: integer
+      required:
+      - weekday
+      - open_utc
+      - close_utc
+      - timezone
+      - session_type
+      title: TradingSessionOut
+      type: object
     ValidationError:
       properties:
         ctx:
@@ -363,6 +781,127 @@ info:
   version: 0.1.0
 openapi: 3.1.0
 paths:
+  /api/v1/instruments:
+    get:
+      description: Catálogo de instrumentos con cursor y filtros por tipo/estado (Q
+        §2.8, §1.4).
+      operationId: instruments_api_v1_instruments_get
+      parameters:
+      - description: Filtrar por clase de activo
+        in: query
+        name: asset_class
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - forex
+            - crypto
+            type: string
+          - type: 'null'
+          description: Filtrar por clase de activo
+          title: Asset Class
+      - description: Filtrar por estado comercial
+        in: query
+        name: status
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - active
+            - paused
+            - delisted
+            type: string
+          - type: 'null'
+          description: Filtrar por estado comercial
+          title: Status
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 25
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cursor
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstrumentPageOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Instruments
+      tags:
+      - instruments
+  /api/v1/instruments/{symbol}:
+    get:
+      description: Specs mínimos del instrumento + estado de mercado (Q §2.8).
+      operationId: instrument_detail_api_v1_instruments__symbol__get
+      parameters:
+      - in: path
+        name: symbol
+        required: true
+        schema:
+          title: Symbol
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstrumentDetailOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Instrument Detail
+      tags:
+      - instruments
+  /api/v1/instruments/{symbol}/specs:
+    get:
+      description: Spec vigente completa con sesiones y estado de mercado (Q §2.8,
+        K §2).
+      operationId: instrument_specs_api_v1_instruments__symbol__specs_get
+      parameters:
+      - in: path
+        name: symbol
+        required: true
+        schema:
+          title: Symbol
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstrumentSpecOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Instrument Specs
+      tags:
+      - instruments
   /api/v1/market-data/candles/{symbol}/{timeframe}:
     get:
       description: Velas OHLC (cursor + `from`/`to`; huecos `gap=true` incluidos,
@@ -465,6 +1004,20 @@ paths:
                 $ref: '#/components/schemas/FeedStatusOut'
           description: Successful Response
       summary: Status
+      tags:
+      - market-data
+  /api/v1/market-data/symbols:
+    get:
+      description: Símbolos con sesión de mercado y estado del feed (Q §2.7, pública).
+      operationId: market_symbols_api_v1_market_data_symbols_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SymbolListOut'
+          description: Successful Response
+      summary: Market Symbols
       tags:
       - market-data
   /api/v1/market-data/ticks:

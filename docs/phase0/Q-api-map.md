@@ -251,7 +251,7 @@ Convención de columna **Idem**: `Sí` = efecto único garantizado con `Idempote
 | Método | Ruta | Descripción | Auth / Scope | Idem | Fase |
 |---|---|---|---|---|---|
 | GET | `/api/v1/market-data/overview` | Snapshot público de Forex/Crypto de referencia (proveedores keyless; `source` + `ts` + `stale`, jamás precio inventado) | **Pública** | N/A | **1** (2026-09-28) |
-| GET | `/api/v1/market-data/symbols` | Símbolos disponibles con sesión de mercado y estado del feed | Pública (o `read`) | N/A | 3 |
+| GET | `/api/v1/market-data/symbols` | Símbolos disponibles con sesión de mercado (`open`/`closed`/`halted` + `next_open`/`next_close`) y estado del feed | **Pública** (en `PUBLIC_PATHS` del gateway) | N/A | **3** (2026-10-01) |
 | GET | `/api/v1/market-data/ticks/{symbol}` | Último tick (snapshot) | `read` | N/A | **3** (2026-10-01) |
 | GET | `/api/v1/market-data/ticks` | Histórico de ticks (cursor, rango ≤ 24 h) | `read` | N/A | **3** (2026-10-01) |
 | GET | `/api/v1/market-data/candles/{symbol}/{timeframe}` | Velas OHLC (cursor, `from/to`) | `read` | N/A | **3** (2026-10-01) |
@@ -264,11 +264,13 @@ Convención de columna **Idem**: `Sí` = efecto único garantizado con `Idempote
 
 | Método | Ruta | Descripción | Auth / Scope | Idem | Fase |
 |---|---|---|---|---|---|
-| GET | `/api/v1/instruments` | Catálogo de instrumentos (cursor, filtros por tipo/estado) | `read` o pública | N/A | 3 |
-| GET | `/api/v1/instruments/{symbol}` | Instrumento (specs mínimos) | `read` o pública | N/A | 3 |
-| GET | `/api/v1/instruments/{symbol}/specs` | Especificaciones completas: tick size, tamaño de lote, horarios, margen, costes | `read` | N/A | 3 |
+| GET | `/api/v1/instruments` | Catálogo de instrumentos (cursor, filtros por tipo/estado) | `read` o pública | N/A | **3** (2026-10-01) |
+| GET | `/api/v1/instruments/{symbol}` | Instrumento (specs mínimos) | `read` o pública | N/A | **3** (2026-10-01) |
+| GET | `/api/v1/instruments/{symbol}/specs` | Especificaciones completas: tick size, tamaño de lote, horarios, margen, costes | `read` | N/A | **3** (2026-10-01) |
 | GET | `/api/v1/instruments/{symbol}/contract-details` | Detalle contractual y reglas de liquidación (derivados) | `read` | N/A | 5 |
 | GET | `/api/v1/admin/instruments` | Catálogo administrable | `admin` | N/A | 3 |
+
+> BUILD-028 (2026-10-01): `instruments`, `instruments/{symbol}` y `.../specs` implementados en `services/market-data` con scope `read`; los tres aceptan el símbolo canónico con `/` (tramo literal o percent-encoded) y sirven la spec vigente por tiempo (`instrument_specs`, REQ-025) más el estado de mercado con `next_open`/`next_close` (REQ-099). `/admin/instruments` queda pendiente de abrir el prefijo `/api/v1/admin/` hacia `market-data` en el gateway (hoy ese prefijo rutea a `identity`).
 
 ### 2.9 Orders (Fase 4)
 

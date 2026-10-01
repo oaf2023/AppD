@@ -7,13 +7,16 @@ deuda conocida de decimalización; aquí está la forma canónica de trading.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from datetime import datetime, time
 from decimal import Decimal
 from typing import Literal
 
 AssetClass = Literal["forex", "crypto"]
 MarketStatusKind = Literal["open", "closed", "halted"]
+SessionType = Literal["regular", "pre", "post"]
+SymbolStatus = Literal["active", "paused", "delisted"]
 TickSide = Literal["buy", "sell", "na"]
 Timeframe = Literal["1m", "5m", "15m", "1h", "4h", "1d"]
 
@@ -238,6 +241,149 @@ class Candle:
                 raise CanonicalDataError(f"volume: no puede ser negativo; llegó {self.volume}")
 
 
+@dataclass(frozen=True, slots=True)
+class SymbolMetadata:
+    """Identidad del símbolo en el symbol master (K §2, REQ-025, BUILD-028).
+
+    Las especificaciones negociables viven en `InstrumentSpec` versionado;
+    aquí solo la identidad estable (símbolo canónico con `/`, clase, divisas,
+    estado comercial y fuente declarada — K §3.1: un símbolo = asset_class +
+    calendario + fuente de precio).
+    """
+
+    symbol: str
+    display_name: str
+    asset_class: AssetClass
+    base_currency: str
+    quote_currency: str
+    status: SymbolStatus
+    source: str
+
+    def __post_init__(self) -> None:
+        if not self.symbol or self.symbol.strip() != self.symbol:
+            raise CanonicalDataError("symbol: no puede estar vacío ni con espacios")
+        if not self.display_name:
+            raise CanonicalDataError("display_name: no puede estar vacío")
+        if self.asset_class not in ("forex", "crypto"):
+            raise CanonicalDataError(f"asset_class: valor desconocido {self.asset_class!r}")
+        if not self.base_currency or not self.quote_currency:
+            raise CanonicalDataError("base_currency/quote_currency: obligatorios")
+        if self.status not in ("active", "paused", "delisted"):
+            raise CanonicalDataError(f"status: valor desconocido {self.status!r}")
+        if not self.source:
+            raise CanonicalDataError("source: no puede estar vacío")
+
+
+@dataclass(frozen=True, slots=True)
+class InstrumentSpec:
+    """Spec negociable versionada de un símbolo (K §2, REQ-025, BUILD-028).
+
+    Versionado `valid_from`/`valid_to` (`valid_to=None` ⇒ versión vigente);
+    el redondeo de precios se deriva de `tick_size` (K §2 → `price_precision`),
+    nunca se almacena. Los campos `*_requirements`/`fee_schedule`/`swap` son
+    JSON declarativo; en el catálogo demo van etiquetados como `mode: demo`.
+    """
+
+    symbol: str
+    version: int
+    valid_from: datetime
+    valid_to: datetime | None
+    tick_size: Decimal
+    pip_size: Decimal
+    contract_size: Decimal
+    min_volume: Decimal
+    max_volume: Decimal
+    volume_step: Decimal
+    margin_requirements: Mapping[str, str] = field(default_factory=dict)
+    fee_schedule: Mapping[str, str] = field(default_factory=dict)
+    swap_configuration: Mapping[str, str | bool] = field(default_factory=dict)
+    jurisdiction_restrictions: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.symbol:
+            raise CanonicalDataError("symbol: no puede estar vacío")
+        if self.version < 1:
+            raise CanonicalDataError(f"version: debe ser >= 1; llegó {self.version}")
+        _require_aware("valid_from", self.valid_from)
+        if self.valid_to is not None:
+            _require_aware("valid_to", self.valid_to)
+            if self.valid_to <= self.valid_from:
+                raise CanonicalDataError("valid_to: debe ser posterior a valid_from")
+        for name in ("tick_size", "pip_size", "contract_size", "min_volume", "volume_step"):
+            value: Decimal = getattr(self, name)
+            if not isinstance(value, Decimal):
+                raise CanonicalDataError(f"{name}: se exige Decimal (ADR-0006)")
+            if value <= 0:
+                raise CanonicalDataError(f"{name}: debe ser > 0; llegó {value}")
+        if not isinstance(self.max_volume, Decimal) or self.max_volume < self.min_volume:
+            raise CanonicalDataError(
+                f"max_volume: debe ser Decimal y >= min_volume; llegó {self.max_volume} < {self.min_volume}"
+            )
+
+    @property
+    def price_precision(self) -> int:
+        """Decimales de precio derivados de `tick_size` (K §2: redondeo por tick)."""
+        exponent = self.tick_size.normalize().as_tuple().exponent
+        return max(0, -int(exponent))
+
+    @property
+    def is_current(self) -> bool:
+        return self.valid_to is None
+
+
+@dataclass(frozen=True, slots=True)
+class TradingSession:
+    """Ventana horaria de un símbolo (K §2, BUILD-028).
+
+    Semántica de las ventanas (horas **UTC**, `timezone` es la etiqueta IANA
+    declaratoria — K §2 `open_utc`/`close_utc`):
+    - `open == close` ⇒ ventana de 24 h (crypto 24/7);
+    - `open < close`  ⇒ ventana dentro del mismo día UTC;
+    - `open > close`  ⇒ ventana que cruza medianoche (termina al día siguiente).
+    `weekday` usa la convención ISO/Python: lunes=0 … domingo=6.
+    """
+
+    symbol: str
+    weekday: int
+    open_utc: time
+    close_utc: time
+    timezone: str
+    session_type: SessionType
+    holiday_calendar: str | None = None
+
+    def __post_init__(self) -> None:
+        if not 0 <= self.weekday <= 6:
+            raise CanonicalDataError(f"weekday: debe estar en [0, 6]; llegó {self.weekday}")
+        if self.open_utc.tzinfo is not None or self.close_utc.tzinfo is not None:
+            raise CanonicalDataError("open_utc/close_utc: deben ser horas sin zona (ya están en UTC)")
+        if not self.timezone:
+            raise CanonicalDataError("timezone: obligatoria (IANA)")
+        if self.session_type not in ("regular", "pre", "post"):
+            raise CanonicalDataError(f"session_type: valor desconocido {self.session_type!r}")
+
+
+@dataclass(frozen=True, slots=True)
+class Suspension:
+    """Suspensión explícita de un símbolo (K §2 `halted`, REQ-099, BUILD-028)."""
+
+    symbol: str
+    code: Literal["news", "maintenance", "breach", "manual"]
+    reason: str
+    starts_at: datetime
+    ends_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if not self.symbol:
+            raise CanonicalDataError("symbol: no puede estar vacío")
+        if self.code not in ("news", "maintenance", "breach", "manual"):
+            raise CanonicalDataError(f"code: valor desconocido {self.code!r}")
+        _require_aware("starts_at", self.starts_at)
+        if self.ends_at is not None:
+            _require_aware("ends_at", self.ends_at)
+            if self.ends_at <= self.starts_at:
+                raise CanonicalDataError("ends_at: debe ser posterior a starts_at")
+
+
 __all__ = [
     "PRICE_EXPONENT",
     "TICK_SIDES",
@@ -245,12 +391,18 @@ __all__ = [
     "AssetClass",
     "Candle",
     "CanonicalDataError",
+    "InstrumentSpec",
     "MarketStatus",
     "MarketStatusKind",
     "ProviderCapabilities",
     "Quote",
+    "SessionType",
+    "Suspension",
+    "SymbolMetadata",
+    "SymbolStatus",
     "Tick",
     "TickSide",
     "Ticker",
     "Timeframe",
+    "TradingSession",
 ]

@@ -27,4 +27,20 @@ def decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
         raise ValidationError("cursor inválido") from exc
 
 
-__all__ = ["decode_cursor", "encode_cursor"]
+def encode_symbol_cursor(symbol: str) -> str:
+    """Cursor opaco sobre el símbolo canónico (keyset `symbol ASC` — Q §1.4)."""
+    return base64.urlsafe_b64encode(symbol.encode()).decode().rstrip("=")
+
+
+def decode_symbol_cursor(cursor: str) -> str:
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        symbol = base64.urlsafe_b64decode(padded.encode()).decode()
+    except (ValueError, binascii.Error) as exc:
+        raise ValidationError("cursor inválido") from exc
+    if not symbol or symbol.strip() != symbol:
+        raise ValidationError("cursor inválido")
+    return symbol
+
+
+__all__ = ["decode_cursor", "decode_symbol_cursor", "encode_cursor", "encode_symbol_cursor"]

@@ -44,6 +44,7 @@ PUBLIC_PATHS: set[tuple[str, str]] = {
     ("POST", "/api/v1/auth/password/forgot"),
     ("POST", "/api/v1/auth/password/reset"),
     ("GET", "/api/v1/market-data/overview"),
+    ("GET", "/api/v1/market-data/symbols"),
     ("GET", "/healthz"),
     ("GET", "/readyz"),
     ("GET", "/metrics"),
@@ -58,6 +59,8 @@ def _target_for(path: str) -> str | None:
     if path.startswith("/api/v1/audit-events"):
         return "audit"
     if path.startswith("/api/v1/market-data/"):
+        return "market_data"
+    if path.startswith("/api/v1/instruments"):
         return "market_data"
     if path.startswith("/api/v1/accounts"):
         return "accounts"

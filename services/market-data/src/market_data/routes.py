@@ -1,14 +1,16 @@
-"""routes — endpoints del Market Data Service (Q-api-map §2.7, BUILD-027).
+"""routes — endpoints del Market Data Service (Q-api-map §2.7/§2.8, BUILD-027/028).
 
-`overview` y `healthz`/`readyz` son públicos (Q §2.7, fase 1); ticks, velas y
-`status` exigen JWT (`read` vía `require_user`; el gateway exige token para
-cualquier `/api/v1/market-data/*` que no sea `overview` — proxy §2.7).
+`overview`, `healthz`/`readyz` y `market-data/symbols` son públicos
+(Q §2.7 "Pública (o `read`)"; el gateway solo exige token para
+`/api/v1/market-data/*` que no esté en `PUBLIC_PATHS`). Ticks, velas,
+`status` e `instruments*` exigen JWT (`read` vía `require_user`).
 """
 
 from __future__ import annotations
 
 import uuid
 from datetime import datetime, timedelta
+from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -18,18 +20,51 @@ from platform_kernel.clock import utcnow
 from platform_kernel.errors import NotFoundError, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from market_data.catalog import (
+    active_suspension_row,
+    current_spec_row,
+    current_specs_for,
+    get_symbol_row,
+    holidays_between,
+    last_tick_feed,
+    list_instrument_rows,
+    list_symbol_rows,
+    row_to_session,
+    row_to_spec,
+    row_to_suspension,
+    session_rows,
+    spec_rows,
+)
 from market_data.db import get_session
-from market_data.domain.models import PRICE_EXPONENT, Candle, Tick, Timeframe
+from market_data.domain.models import (
+    PRICE_EXPONENT,
+    AssetClass,
+    Candle,
+    MarketStatus,
+    SymbolStatus,
+    Tick,
+    Timeframe,
+)
 from market_data.domain.protocols import MarketDataProvider
-from market_data.pagination import decode_cursor
+from market_data.domain.symbol_master import OPEN_SCAN_DAYS, compute_market_status, spec_asof
+from market_data.pagination import decode_cursor, decode_symbol_cursor, encode_symbol_cursor
 from market_data.schemas import (
     CandleOut,
     CandlePageOut,
+    FeedBriefOut,
     FeedStatusOut,
     HealthOut,
+    InstrumentDetailOut,
+    InstrumentOut,
+    InstrumentPageOut,
+    InstrumentSpecOut,
+    MarketStateOut,
     PageInfo,
+    SymbolListOut,
+    SymbolOut,
     TickOut,
     TickPageOut,
+    TradingSessionOut,
 )
 from market_data.service import MarketDataService
 from market_data.store import (
@@ -42,6 +77,7 @@ from market_data.store import (
     row_to_tick,
     tick_cursor,
 )
+from market_data.tables import InstrumentSpecRow, SymbolRow
 
 router = APIRouter()
 
@@ -187,6 +223,222 @@ def _fmt_price(value) -> str | None:  # type: ignore[no-untyped-def]
     if value is None:
         return None
     return str(value.quantize(PRICE_EXPONENT))
+
+
+def _fmt_spec(value: Decimal) -> str:
+    """Forma canónica de un parámetro de spec (sin notación científica, ADR-0006)."""
+    return format(value.normalize(), "f")
+
+
+async def _market_status(
+    session: AsyncSession,
+    symbol: str,
+    *,
+    source: str,
+    simulated: bool,
+    now: datetime,
+) -> MarketStatus:
+    """Estado del mercado del símbolo: sesiones + festivos + suspensión (REQ-099)."""
+    rows = await session_rows(session, symbol)
+    sessions = [row_to_session(row) for row in rows]
+    calendars = {item.holiday_calendar for item in sessions if item.holiday_calendar is not None}
+    holidays = await holidays_between(session, calendars, now.date(), now.date() + timedelta(days=OPEN_SCAN_DAYS))
+    susp_row = await active_suspension_row(session, symbol, now)
+    return compute_market_status(
+        symbol=symbol,
+        sessions=sessions,
+        suspension=row_to_suspension(susp_row) if susp_row else None,
+        holidays=holidays,
+        source=source,
+        simulated=simulated,
+        now=now,
+    )
+
+
+def _market_out(status: MarketStatus) -> MarketStateOut:
+    return MarketStateOut(
+        status=status.status,
+        reason=status.reason,
+        next_open=status.next_open,
+        next_close=status.next_close,
+        as_of=status.as_of,
+    )
+
+
+def _feed_out(
+    feed: dict[str, tuple[datetime, str, bool]],
+    row: SymbolRow,
+    caps_simulated: bool,
+) -> FeedBriefOut:
+    last = feed.get(row.symbol)
+    if last is None:
+        return FeedBriefOut(source=row.source, simulated=caps_simulated, last_tick_ts=None)
+    tick_ts, source, simulated = last
+    return FeedBriefOut(source=source, simulated=simulated, last_tick_ts=tick_ts)
+
+
+def _instrument_out(row: SymbolRow, spec: InstrumentSpecRow) -> InstrumentOut:
+    return InstrumentOut(
+        symbol=row.symbol,
+        display_name=row.display_name,
+        asset_class=row.asset_class,  # type: ignore[arg-type]  # validado por chk_symbol_asset_class
+        base_currency=row.base_currency,
+        quote_currency=row.quote_currency,
+        status=row.status,  # type: ignore[arg-type]  # validado por chk_symbol_status
+        tick_size=_fmt_spec(spec.tick_size),
+        min_volume=_fmt_spec(spec.min_volume),
+        max_volume=_fmt_spec(spec.max_volume),
+        volume_step=_fmt_spec(spec.volume_step),
+        version=spec.version,
+        valid_from=spec.valid_from,
+    )
+
+
+# Los símbolos canónicos contienen `/` (EUR/USD): `{symbol:path}` acepta tanto
+# el tramo literal como el percent-encoded `%2F` que envíen los clientes.
+# `.../specs` se registra ANTES que el detalle para que `{symbol:path}` no se
+# coma el sufijo (el conversor `path` es codicioso).
+@router.get("/api/v1/instruments/{symbol:path}/specs", response_model=InstrumentSpecOut, tags=["instruments"])
+async def instrument_specs(
+    symbol: str,
+    session: SessionDep,
+    provider: ProviderDep,
+    _auth: AuthDep,
+) -> InstrumentSpecOut:
+    """Spec vigente completa con sesiones y estado de mercado (Q §2.8, K §2)."""
+    now = utcnow()
+    row = await get_symbol_row(session, symbol)
+    if row is None:
+        raise NotFoundError(resource="instrumento")
+    rows = await spec_rows(session, symbol)
+    spec = spec_asof([row_to_spec(item) for item in rows], now)
+    if spec is None:
+        raise NotFoundError(resource="spec del instrumento")
+    feed = await last_tick_feed(session)
+    feed_out = _feed_out(feed, row, caps_simulated=provider.capabilities().simulated)
+    status = await _market_status(session, symbol, source=feed_out.source, simulated=feed_out.simulated, now=now)
+    sessions = [row_to_session(item) for item in await session_rows(session, symbol)]
+    return InstrumentSpecOut(
+        symbol=spec.symbol,
+        display_name=row.display_name,
+        asset_class=row.asset_class,  # type: ignore[arg-type]  # validado por chk_symbol_asset_class
+        status=row.status,  # type: ignore[arg-type]  # validado por chk_symbol_status
+        version=spec.version,
+        valid_from=spec.valid_from,
+        valid_to=spec.valid_to,
+        tick_size=_fmt_spec(spec.tick_size),
+        pip_size=_fmt_spec(spec.pip_size),
+        contract_size=_fmt_spec(spec.contract_size),
+        min_volume=_fmt_spec(spec.min_volume),
+        max_volume=_fmt_spec(spec.max_volume),
+        volume_step=_fmt_spec(spec.volume_step),
+        price_precision=spec.price_precision,
+        margin_requirements=dict(spec.margin_requirements),
+        fee_schedule=dict(spec.fee_schedule),
+        swap_configuration=dict(spec.swap_configuration),
+        jurisdiction_restrictions=list(spec.jurisdiction_restrictions),
+        sessions=[
+            TradingSessionOut(
+                weekday=item.weekday,
+                open_utc=item.open_utc,
+                close_utc=item.close_utc,
+                timezone=item.timezone,
+                session_type=item.session_type,
+                holiday_calendar=item.holiday_calendar,
+            )
+            for item in sessions
+        ],
+        market=_market_out(status),
+    )
+
+
+@router.get("/api/v1/instruments/{symbol:path}", response_model=InstrumentDetailOut, tags=["instruments"])
+async def instrument_detail(
+    symbol: str,
+    session: SessionDep,
+    provider: ProviderDep,
+    _auth: AuthDep,
+) -> InstrumentDetailOut:
+    """Specs mínimos del instrumento + estado de mercado (Q §2.8)."""
+    now = utcnow()
+    row = await get_symbol_row(session, symbol)
+    if row is None:
+        raise NotFoundError(resource="instrumento")
+    spec_row = await current_spec_row(session, symbol)
+    if spec_row is None:
+        raise NotFoundError(resource="spec del instrumento")
+    feed = await last_tick_feed(session)
+    feed_out = _feed_out(feed, row, caps_simulated=provider.capabilities().simulated)
+    status = await _market_status(session, symbol, source=feed_out.source, simulated=feed_out.simulated, now=now)
+    base = _instrument_out(row, spec_row)
+    return InstrumentDetailOut(
+        **base.model_dump(),
+        pip_size=_fmt_spec(spec_row.pip_size),
+        contract_size=_fmt_spec(spec_row.contract_size),
+        price_precision=row_to_spec(spec_row).price_precision,
+        market=_market_out(status),
+    )
+
+
+@router.get("/api/v1/instruments", response_model=InstrumentPageOut, tags=["instruments"])
+async def instruments(
+    session: SessionDep,
+    _auth: AuthDep,
+    asset_class: AssetClass | None = Query(default=None, description="Filtrar por clase de activo"),
+    status: SymbolStatus | None = Query(default=None, description="Filtrar por estado comercial"),
+    limit: int = Query(default=25, ge=1, le=100),
+    cursor: str | None = Query(default=None),
+) -> InstrumentPageOut:
+    """Catálogo de instrumentos con cursor y filtros por tipo/estado (Q §2.8, §1.4)."""
+    after = decode_symbol_cursor(cursor) if cursor else None
+    rows, has_more = await list_instrument_rows(
+        session,
+        asset_class=asset_class,
+        status=status,
+        after_symbol=after,
+        limit=limit,
+    )
+    specs = await current_specs_for(session, [item.symbol for item in rows])
+    data: list[InstrumentOut] = []
+    for item in rows:
+        spec = specs.get(item.symbol)
+        if spec is None:
+            # Invariante del catálogo: todo símbolo sembrado lleva spec vigente.
+            continue
+        data.append(_instrument_out(item, spec))
+    next_cursor = encode_symbol_cursor(rows[-1].symbol) if has_more and rows else None
+    return InstrumentPageOut(
+        data=data,
+        page=PageInfo(next_cursor=next_cursor, prev_cursor=None, has_more=has_more, limit=limit),
+    )
+
+
+@router.get("/api/v1/market-data/symbols", response_model=SymbolListOut, tags=["market-data"])
+async def market_symbols(session: SessionDep, provider: ProviderDep) -> SymbolListOut:
+    """Símbolos con sesión de mercado y estado del feed (Q §2.7, pública)."""
+    now = utcnow()
+    caps = provider.capabilities()
+    rows = await list_symbol_rows(session)
+    feed = await last_tick_feed(session)
+    data: list[SymbolOut] = []
+    for item in rows:
+        feed_out = _feed_out(feed, item, caps_simulated=caps.simulated)
+        status = await _market_status(
+            session, item.symbol, source=feed_out.source, simulated=feed_out.simulated, now=now
+        )
+        data.append(
+            SymbolOut(
+                symbol=item.symbol,
+                display_name=item.display_name,
+                asset_class=item.asset_class,  # type: ignore[arg-type]  # validado por chk_symbol_asset_class
+                base_currency=item.base_currency,
+                quote_currency=item.quote_currency,
+                status=item.status,  # type: ignore[arg-type]  # validado por chk_symbol_status
+                market=_market_out(status),
+                feed=feed_out,
+            )
+        )
+    return SymbolListOut(data=data, simulated=caps.simulated, as_of=now)
 
 
 def _tick_out(tick: Tick, tick_id: uuid.UUID) -> TickOut:
