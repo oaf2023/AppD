@@ -201,7 +201,18 @@ en float, K §91) en el job `quality`; workflow nuevo `.github/workflows/nightly
 (cron 04:00 UTC + dispatch, `HYPOTHESIS_PROFILE=nightly` con 200 ejemplos y
 gates de cobertura); docs reconciliados (ADR-0018 “Estado de implementación”,
 ADR-0003/README/phase0 3.13→3.14, W-build-now BUILD-024/025 `IMPLEMENTADO`,
-`helpers.py` y `.env.example` con `RETENTION_SWEEP_*`).
+`helpers.py` y `.env.example` con `RETENTION_SWEEP_*`). Cierre (2026-09-30):
+commit `5db6a6e` (65 archivos, +4274/−278) → push `master` → CI GitHub run
+`36802411608` **6/6 jobs `success`** (quality con el nuevo paso anti-float sobre
+Python 3.14, test con `pytest --cov` + `check_coverage`, security con gitleaks
+sin hallazgos, supply-chain reconstruyendo las 7 imágenes `python3.14-*` y
+trivy CRITICAL → 0, infra, web) → redespliegue OMV: 8 imágenes
+`platform/*:omv` reconstruidas en el servidor (`python --version` en la imagen
+ledger → **3.14.7**), `compose up -d` → **17 contenedores** con los 8 servicios
+de la plataforma `healthy`, gateway `40001/healthz` con **6 checks ok**,
+`40005/healthz` y `40007/healthz` `ok`, portada `40000` → 200 → E2E F2.3
+contra el despliegue **15/15 PASS** (registro → login → demo 10000 →
+ledger→wallet → extractos → close 409 → reload 202 → transfers 400/404).
 
 ---
 
