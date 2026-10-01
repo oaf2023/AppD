@@ -1,18 +1,18 @@
-# ADR-0003 — Lenguaje de servicio: Python 3.13/FastAPI por defecto; sin Rust/Go en Fase 1 salvo benchmark
+# ADR-0003 — Lenguaje de servicio: Python 3.14/FastAPI por defecto; sin Rust/Go en Fase 1 salvo benchmark
 
 - **Estado:** Aceptada
-- **Fecha:** 2026-09-27
-- **ADR relacionados:** ADR-0002 (descomposición), ADR-0004 (contratos), ADR-0006 (representación del dinero)
+- **Fecha:** 2026-09-27 (runtime actualizado de 3.13 a 3.14 en BUILD-024, ver ADR-0018)
+- **ADR relacionados:** ADR-0002 (descomposición), ADR-0004 (contratos), ADR-0006 (representación del dinero), ADR-0018 (testing de invariantes y gates)
 
 ## Contexto
 
-El stack de Fase 1 (`00-decisions.md` §4) fija **Python 3.13 + FastAPI + Pydantic v2 + SQLAlchemy 2 async** como backend. La latencia crítica de un OTC (aceptación de orden, ingest y difusión de ticks) es el punto donde normalmente se invoca Rust o Go. Introducir un segundo lenguaje tiene coste concreto: toolchain e imágenes adicionales, pipeline de CI duplicado, contratos FFI/IPC entre lenguajes, dos curvas de observabilidad por runtime, duplicidad de controles de seguridad y **dos formas de modelar dinero** (`Decimal` vs `f64`), justo donde `00-decisions.md` §5 exige una sola vía verificable.
+El stack de Fase 1 (`00-decisions.md` §4) fija **Python 3.14 + FastAPI + Pydantic v2 + SQLAlchemy 2 async** como backend (versionado de 3.13 a 3.14 en BUILD-024: sysmon reemplaza a greenlet como `coverage` core y elimina eventos `return` fantasma en la medición de cobertura, ver ADR-0018). La latencia crítica de un OTC (aceptación de orden, ingest y difusión de ticks) es el punto donde normalmente se invoca Rust o Go. Introducir un segundo lenguaje tiene coste concreto: toolchain e imágenes adicionales, pipeline de CI duplicado, contratos FFI/IPC entre lenguajes, dos curvas de observabilidad por runtime, duplicidad de controles de seguridad y **dos formas de modelar dinero** (`Decimal` vs `f64`), justo donde `00-decisions.md` §5 exige una sola vía verificable.
 
 Además hoy no hay ningún hot spot medido: la Fase 1 es I/O-bound (PostgreSQL/Redis/Redpanda), y los SLO de latencia son todavía un borrador `POR VALIDAR` (`M-tech-stack.md` §7.1). Optimizar sin perfil es especulación.
 
 ## Decisión
 
-1. **Python 3.13 es el lenguaje por defecto de todos los servicios de Fase 1.** FastAPI (async sobre Starlette), Pydantic v2 en modo estricto para payloads financieros, SQLAlchemy 2 async + Alembic, `asyncio.TaskGroup` para consumidores y relés.
+1. **Python 3.14 es el lenguaje por defecto de todos los servicios de Fase 1.** FastAPI (async sobre Starlette), Pydantic v2 en modo estricto para payloads financieros, SQLAlchemy 2 async + Alembic, `asyncio.TaskGroup` para consumidores y relés.
 2. **Prohibido introducir Rust o Go en Fase 1** salvo que un **benchmark obligatorio** (definido abajo) demuestre incumplimiento del SLO con la implementación Python ya optimizada.
 3. Si se aprueba, la migración es **de componente**: el módulo se aísla tras su API versionada existente (mismo OpenAPI, mismos eventos), convive con Python dentro del mismo servicio y **no** se migra el servicio completo.
 

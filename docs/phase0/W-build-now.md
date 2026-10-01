@@ -37,7 +37,10 @@ Regla: todo lo aquí listado es implementable con código propio + open-source +
 > `accounts`/`ledger` con Alembic; `wallet` con Alembic + `create_all`/seed USD),
 > **BUILD-019** (proyección wallet + reconciliador),
 > **BUILD-021** (transferencias internas idempotentes) y **BUILD-022** (cursor
-> multi-moneda) F2.3 `IMPLEMENTADO`; **BUILD-024**/**BUILD-025** `PENDIENTES`.
+> multi-moneda) F2.3 `IMPLEMENTADO`; **BUILD-024** (suite de invariantes + gates de
+> cobertura + lint anti-float + nightly) y **BUILD-025** (retención con sweep)
+> Fase 2 `IMPLEMENTADO` (2026-09-30: 342 tests, invariantes 20/20, ledger y wallet
+> al 100 % líneas/ramas, detalle en `ADR-0018` y `docs/component-status.md`).
 
 | ID | Funcionalidad | Por qué es construible ya | Entregable esperado | Fase |
 |---|---|---|---|---|
@@ -48,8 +51,8 @@ Regla: todo lo aquí listado es implementable con código propio + open-source +
 | BUILD-021 | Transferencias internas con idempotencia (`Idempotency-Key`) | Clave+hash propios | Doble POST = un solo movimiento | 2 |
 | BUILD-022 | Historial cursor-paginado + multi-moneda con redondeo documentado | Solo código propio | Sin duplicados ante inserts concurrentes | 2 |
 | BUILD-023 | Matriz de jurisdicciones + gating de producto | Tabla versionada propia | País bloqueado rechaza con código tipado | 2 |
-| BUILD-024 | Suite de invariantes financieras (balance cero, no-float, outbox pareado) | Tests propios adversariales | Suite corre en CI + nightly | 2 |
-| BUILD-025 | Retención/particionado/archivado con replay de saldos | Particionamiento Postgres propio | Archivado no rompe reconstrucción | 2 |
+| BUILD-024 | Suite de invariantes financieras (balance cero, no-float, outbox pareado) | Tests propios adversariales | ✅ `IMPLEMENTADO`: 20/20 invariantes en `tests/invariants/`, gates en CI (`tools/check_coverage.py`, `tools/check_no_float.py`) + `nightly.yml` | 2 |
+| BUILD-025 | Retención/particionado/archivado con replay de saldos | Particionamiento Postgres propio | ✅ `IMPLEMENTADO`: sweep `ledger/retention.py` (100 % cobertura) con replay de saldos verificado | 2 |
 
 ## 4. Market-data / Catálogo / Charting base (Fase 3)
 

@@ -42,7 +42,7 @@ Plataforma FinTech/Trading de derivados OTC construida desde cero, con paridad f
 |---|---|---|
 | Monorepo único con `apps/ services/ packages/ infrastructure/` | sí | ADR-0001 |
 | Microservicios desde el inicio con catálogo mínimo | sí, con criterios de extracción | ADR-0002 |
-| Python 3.13 + FastAPI como lenguaje de servicio por defecto | sí; Rust/Go solo con benchmark | ADR-0003 |
+| Python 3.14 + FastAPI como lenguaje de servicio por defecto (original 3.13; upgrade BUILD-024) | sí; Rust/Go solo con benchmark | ADR-0003 |
 | PostgreSQL por servicio (schema aislado), sin acceso cruzado | sí | ADR-0005 |
 | Ledger append-only inmutable como fuente de verdad | sí | ADR-0005 |
 | Dinero en `Decimal`/`NUMERIC`, nunca `float` | sí | ADR-0006 |

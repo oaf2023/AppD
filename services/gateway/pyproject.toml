@@ -2,7 +2,7 @@
 name = "gateway-service"
 version = "0.1.0"
 description = "API Gateway — edge: ruteo, JWT, rate limit, cabeceras de seguridad"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "platform-kernel",
     "platform-contracts",

@@ -2,7 +2,7 @@
 name = "market-data-service"
 version = "0.1.0"
 description = "Market Data — Forex y Crypto de referencia (proveedores keyless, cero secretos)"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "platform-kernel",
     "platform-contracts",

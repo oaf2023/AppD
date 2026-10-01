@@ -22,47 +22,47 @@ System_Boundary(system, "MonedasAR — Plataforma FinTech/Trading OTC") {
         Container(admin_shell, "apps/admin-shell", "Next.js 15, React, TypeScript, Tailwind",
             "Shell de backoffice (micro-frontend host). Carga remota de MFEs de admin. Autenticación admin, RBAC, auditoría visible.")
 
-        Container(gateway, "services/gateway", "Python 3.13, FastAPI",
+        Container(gateway, "services/gateway", "Python 3.14, FastAPI",
             "Único entrypoint externo (HTTPS/WSS). Terminación TLS, routing, validación JWT, rate limit, security headers, request-id, correlación OTel, circuit breaker básico. NO lógica de negocio.")
 
-        Container(identity, "services/identity", "Python 3.13, FastAPI",
+        Container(identity, "services/identity", "Python 3.14, FastAPI",
             "Usuarios, credenciales (Argon2id), sesiones, MFA TOTP, refresh tokens rotativos con detección de reuso, RBAC, devices, login history, account recovery. Emite eventos de dominio.")
 
-        Container(audit, "services/audit", "Python 3.13, FastAPI",
+        Container(audit, "services/audit", "Python 3.14, FastAPI",
             "Log append-only inmutable de acciones críticas (consumidor de eventos). Escribe en su propio schema PostgreSQL. Índices por correlation_id, aggregate_id, timestamp. Retención configurable.")
     }
 
     %% ==================== FASE 2+ (PENDIENTE) ====================
     Container_Boundary(phase2plus, "Fase 2+ — PENDIENTE (no existen en Fase 1)") {
 
-        Container(accounts, "services/accounts", "Python 3.13, FastAPI",
+        Container(accounts, "services/accounts", "Python 3.14, FastAPI",
             "Cuentas de trading, perfiles, jurisdicción, límites, estado (active/suspended/closed), metadata KYC. [PENDIENTE]")
 
-        Container(wallet, "services/wallet", "Python 3.13, FastAPI",
+        Container(wallet, "services/wallet", "Python 3.14, FastAPI",
             "Balances multi-moneda (vista/proyección verificada contra ledger). No es fuente de verdad. [PENDIENTE]")
 
-        Container(ledger, "services/ledger", "Python 3.13, FastAPI",
+        Container(ledger, "services/ledger", "Python 3.14, FastAPI",
             "Double-entry append-only, fuente de verdad financiera. Asientos inmutables, conciliación, auditoría contable. [PENDIENTE]")
 
-        Container(market_data, "services/market-data", "Python 3.13, FastAPI",
+        Container(market_data, "services/market-data", "Python 3.14, FastAPI",
             "Adapters de proveedores, normalización, cache, streaming WebSocket (ticks, candles, order book). [PENDIENTE]")
 
-        Container(trading, "services/trading", "Python 3.13, FastAPI",
+        Container(trading, "services/trading", "Python 3.14, FastAPI",
             "OMS/EMS: órdenes, ejecución, posiciones, margen, PnL en tiempo real, SL/TP, motor de matching interno (demo). [PENDIENTE]")
 
-        Container(risk, "services/risk", "Python 3.13, FastAPI",
+        Container(risk, "services/risk", "Python 3.14, FastAPI",
             "Límites pre-trade/post-trade, circuit breakers, kill switches, margin calls, exposure aggregation. [PENDIENTE]")
 
-        Container(payments, "services/payments", "Python 3.13, FastAPI",
+        Container(payments, "services/payments", "Python 3.14, FastAPI",
             "Depósitos/retiros vía adapters desacoplados (PSP, crypto, bank). Idempotencia, webhooks, reconciliation. [PENDIENTE]")
 
-        Container(kyc, "services/kyc", "Python 3.13, FastAPI",
+        Container(kyc, "services/kyc", "Python 3.14, FastAPI",
             "Orquestación KYC/AML con adapters de proveedor. Decision engine, document verification, ongoing monitoring. [PENDIENTE]")
 
-        Container(notification, "services/notification", "Python 3.13, FastAPI",
+        Container(notification, "services/notification", "Python 3.14, FastAPI",
             "Email/SMS/push/in-app/webhook via adapters. Plantillas, preferencias, dedup, rate limit. [PENDIENTE]")
 
-        Container(admin, "services/admin", "Python 3.13, FastAPI",
+        Container(admin, "services/admin", "Python 3.14, FastAPI",
             "Backoffice BFF: agrega datos de identity, accounts, wallet, ledger, trading, risk, kyc, audit para MFEs de admin-shell. [PENDIENTE]")
     }
 }

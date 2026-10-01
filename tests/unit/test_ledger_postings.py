@@ -350,6 +350,39 @@ def test_currency_iso_4217_obligatoria() -> None:
         )
 
 
+def test_account_code_no_string_rechazado() -> None:
+    with pytest.raises(PostingRuleError, match="account_code debe ser una cadena"):
+        _validate(
+            "deposit",
+            [
+                _entry(123, "D", "10"),
+                _entry(CLIENT_LIABILITY, "C", "10", owner_id=OWNER_A),
+            ],
+        )
+
+
+def test_cuenta_de_control_rechaza_owner_type_distinto_de_system() -> None:
+    with pytest.raises(PostingRuleError, match="no admite owner_type='user'"):
+        _validate(
+            "deposit",
+            [
+                _entry(CONTROL_ASSET, "D", "10", owner_type="user"),
+                _entry(CLIENT_LIABILITY, "C", "10", owner_id=OWNER_A),
+            ],
+        )
+
+
+def test_owner_id_no_uuid_rechazado() -> None:
+    with pytest.raises(PostingRuleError, match="owner_id debe ser un UUID"):
+        _validate(
+            "deposit",
+            [
+                _entry(CONTROL_ASSET, "D", "10"),
+                _entry(CLIENT_LIABILITY, "C", "10", owner_id="no-es-uuid"),
+            ],
+        )
+
+
 # --------------------------------------------------------------------------- idempotencia (ADR-0010)
 
 
@@ -538,6 +571,28 @@ def test_metricas_outbox_compartidas_con_identity() -> None:
         ["service"],
     )
     assert shared is LEDGER_BACKLOG
+
+
+def test_metrica_oculta_por_el_registro_reutiliza_el_colector_del_fallback(monkeypatch) -> None:
+    from prometheus_client import REGISTRY
+
+    real = REGISTRY._names_to_collectors
+
+    class _Oculto(dict):
+        def get(self, key, default=None):  # type: ignore[no-untyped-def]
+            return None
+
+    def _fabrica(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise ValueError("duplicado")
+
+    monkeypatch.setattr(REGISTRY, "_names_to_collectors", _Oculto(real))
+    again = _shared_metric(
+        _fabrica,
+        "platform_ledger_postings_total",
+        "Postings registrados en el ledger",
+        ["type"],
+    )
+    assert again is POSTINGS_TOTAL
 
 
 def test_backoff_exponencial_con_jitter_cero() -> None:

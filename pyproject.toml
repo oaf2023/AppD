@@ -2,7 +2,7 @@
 name = "platform"
 version = "0.1.0"
 description = "MonedasAR — raíz del workspace Python del monorepo"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = []
 
 [dependency-groups]
@@ -17,6 +17,7 @@ dev = [
     "aiosqlite>=0.20.0",
     "openapi-spec-validator>=0.7",
     "pyyaml>=6.0",
+    "hypothesis>=6.168.3",
 ]
 
 [tool.uv.workspace]
@@ -24,7 +25,7 @@ members = ["packages/*", "services/*"]
 
 [tool.ruff]
 line-length = 120
-target-version = "py313"
+target-version = "py314"
 extend-exclude = ["**/migrations/versions/*"]
 
 [tool.ruff.lint]
@@ -35,7 +36,7 @@ ignore = ["B008", "UP046", "UP047"]
 "tests/*" = ["S101"]
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.14"
 strict = true
 plugins = ["pydantic.mypy"]
 warn_unused_ignores = false
@@ -53,8 +54,11 @@ addopts = "-q --strict-markers"
 markers = [
     "integration: pruebas que requieren PostgreSQL o servicios externos",
     "e2e: pruebas de extremo a extremo a través del gateway",
+    "invariants: suite de invariantes financieros (ADR-0018, bloqueante de CI)",
 ]
 
 [tool.coverage.run]
 source = ["packages", "services"]
 omit = ["*/migrations/*", "*/tests/*"]
+core = "sysmon"
+branch = true

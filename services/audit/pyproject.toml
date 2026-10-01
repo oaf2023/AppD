@@ -2,7 +2,7 @@
 name = "audit-service"
 version = "0.1.0"
 description = "Audit Service — registro append-only de acciones y eventos"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "platform-kernel",
     "platform-contracts",

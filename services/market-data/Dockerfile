@@ -1,6 +1,6 @@
 # MonedasAR Market Data Service — imagen multi-stage, non-root.
 # Build: docker build -f services/market-data/Dockerfile -t platform/market-data:dev .
-FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS builder
+FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim AS builder
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -15,7 +15,7 @@ COPY services/market-data ./services/market-data
 
 RUN uv sync --frozen --no-dev --no-editable --package market-data-service
 
-FROM python:3.13-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 RUN useradd --system --uid 10001 --create-home appuser
 

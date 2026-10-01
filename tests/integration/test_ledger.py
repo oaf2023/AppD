@@ -7,20 +7,29 @@ el append-only real (ADR-0011 §2). Requiere PostgreSQL (`platform_ledger`).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 
 import platform_contracts.events as ev
 import pytest
 from helpers import lifespan_client
 from ledger.config import get_ledger_settings
-from ledger.consumer import client_account_code, fund_demo_from_event, reset_demo_balance_from_event
+from ledger.consumer import (
+    LedgerEventConsumer,
+    client_account_code,
+    fund_demo_from_event,
+    reset_demo_balance_from_event,
+)
 from ledger.db import get_session_factory
 from ledger.models import LedgerEntry, LedgerTransaction, OutboxEvent
+from ledger.pagination import encode_cursor
+from ledger.public import encode_period_cursor
 from platform_contracts.events import topic_for_event
 from platform_kernel.events import build_event
 from platform_kernel.security.tokens import new_access_token, new_service_token
@@ -732,6 +741,222 @@ async def test_consumidor_reinicia_saldo_con_delta(ledger_client) -> None:  # ty
         assert await reset_demo_balance_from_event(session, settings, negativo) is False
 
 
+async def test_reinicio_sin_fondeo_previo_y_en_moneda_distinta(ledger_client) -> None:  # type: ignore[no-untyped-def]
+    settings = get_ledger_settings()
+    factory = get_session_factory()
+
+    # owner sin cuentas: `_owner_balance` no itera ninguna fila y devuelve 0
+    fresco = uuid.uuid4()
+    reset = _demo_envelope(
+        ev.DEMO_BALANCE_RESET,
+        {"user_id": str(fresco), "currency": "USD", "new_balance": "500"},
+    )
+    async with factory() as session:
+        assert await reset_demo_balance_from_event(session, settings, reset) is True
+    balances = await ledger_client.get("/internal/v1/balances", params={"owner_id": str(fresco)}, headers=HEADERS)
+    assert balances.json()["data"] == [{"owner_id": str(fresco), "currency": "USD", "balance": "500"}]
+
+    # fondeo en EUR y reinicio en USD: el owner existe pero en otra moneda
+    otro = uuid.uuid4()
+    fund = _demo_envelope(
+        ev.DEMO_ACCOUNT_CREATED,
+        {"user_id": str(otro), "currency": "EUR", "initial_balance": "100"},
+    )
+    async with factory() as session:
+        assert await fund_demo_from_event(session, settings, fund) is True
+    reset_usd = _demo_envelope(
+        ev.DEMO_BALANCE_RESET,
+        {"user_id": str(otro), "currency": "USD", "new_balance": "250"},
+    )
+    async with factory() as session:
+        assert await reset_demo_balance_from_event(session, settings, reset_usd) is True
+    balances = await ledger_client.get("/internal/v1/balances", params={"owner_id": str(otro)}, headers=HEADERS)
+    assert {row["currency"]: row["balance"] for row in balances.json()["data"]} == {"EUR": "100", "USD": "250"}
+
+
+async def test_consumidor_rechaza_cuentas_inconsistentes(ledger_client) -> None:  # type: ignore[no-untyped-def]
+    settings = get_ledger_settings()
+    factory = get_session_factory()
+    user_id = uuid.uuid4()
+
+    # la cuenta de cliente de este usuario existe con un owner_id distinto
+    # (códigos por usuario: el envenenamiento no afecta al resto de la suite)
+    async with factory() as session:
+        await session.execute(
+            text(
+                "INSERT INTO ledger.ledger_accounts "
+                "(id, code, name, type, currency, owner_id, owner_type, is_control, created_at) "
+                "VALUES (:id, :code, 'cliente', 'liability', 'USD', :owner, 'user', false, now())"
+            ),
+            {"id": uuid.uuid4(), "code": client_account_code("USD", user_id), "owner": uuid.uuid4()},
+        )
+        await session.commit()
+
+    fund = _demo_envelope(
+        ev.DEMO_ACCOUNT_CREATED,
+        {"user_id": str(user_id), "currency": "USD", "initial_balance": "10000"},
+    )
+    async with factory() as session:
+        assert await fund_demo_from_event(session, settings, fund) is False
+
+    reset = _demo_envelope(
+        ev.DEMO_BALANCE_RESET,
+        {"user_id": str(user_id), "currency": "USD", "new_balance": "7500"},
+    )
+    async with factory() as session:
+        assert await reset_demo_balance_from_event(session, settings, reset) is False
+
+    balances = await ledger_client.get("/internal/v1/balances", params={"owner_id": str(user_id)}, headers=HEADERS)
+    assert balances.json()["data"] == []
+
+
+class _ConsumidorFalso:
+    """Doble de `AIOKafkaConsumer` que sólo registra los `commit`."""
+
+    def __init__(self) -> None:
+        self.commits: list[Any] = []
+
+    async def commit(self, offsets: Any) -> None:
+        self.commits.append(offsets)
+
+
+def _mensaje(envelope: Any, offset: int = 0) -> SimpleNamespace:
+    return SimpleNamespace(
+        topic="accounts.trading_account.demo",
+        partition=0,
+        offset=offset,
+        value=json.dumps(envelope.model_dump(mode="json")).encode(),
+    )
+
+
+async def test_consumidor_handle_descarta_mensaje_invalido(ledger_client) -> None:  # type: ignore[no-untyped-def]
+    consumer = LedgerEventConsumer(get_session_factory(), get_ledger_settings())
+    fake = _ConsumidorFalso()
+    await consumer._handle(fake, SimpleNamespace(topic="t", partition=0, offset=4, value=b"no es json"))
+    assert len(fake.commits) == 1
+    assert list(fake.commits[0].values()) == [5]
+
+
+async def test_consumidor_handle_fondea_y_omite_replay(ledger_client) -> None:  # type: ignore[no-untyped-def]
+    consumer = LedgerEventConsumer(get_session_factory(), get_ledger_settings())
+    user_id = uuid.uuid4()
+    envelope = _demo_envelope(
+        ev.DEMO_ACCOUNT_CREATED,
+        {"user_id": str(user_id), "currency": "USD", "initial_balance": "10000"},
+    )
+    fake = _ConsumidorFalso()
+    await consumer._handle(fake, _mensaje(envelope, offset=10))
+    await consumer._handle(fake, _mensaje(envelope, offset=11))
+    assert len(fake.commits) == 2
+
+    balances = await ledger_client.get("/internal/v1/balances", params={"owner_id": str(user_id)}, headers=HEADERS)
+    assert balances.json()["data"][0]["balance"] == "10000"
+
+
+async def test_consumidor_handle_reinicia_y_omite_sin_delta(ledger_client) -> None:  # type: ignore[no-untyped-def]
+    settings = get_ledger_settings()
+    factory = get_session_factory()
+    user_id = uuid.uuid4()
+    fund = _demo_envelope(
+        ev.DEMO_ACCOUNT_CREATED,
+        {"user_id": str(user_id), "currency": "USD", "initial_balance": "10000"},
+    )
+    async with factory() as session:
+        assert await fund_demo_from_event(session, settings, fund) is True
+
+    consumer = LedgerEventConsumer(factory, settings)
+    fake = _ConsumidorFalso()
+    reset = _demo_envelope(
+        ev.DEMO_BALANCE_RESET,
+        {"user_id": str(user_id), "currency": "USD", "new_balance": "7500"},
+    )
+    sin_delta = _demo_envelope(
+        ev.DEMO_BALANCE_RESET,
+        {"user_id": str(user_id), "currency": "USD", "new_balance": "7500"},
+    )
+    await consumer._handle(fake, _mensaje(reset, offset=20))
+    await consumer._handle(fake, _mensaje(sin_delta, offset=21))
+    assert len(fake.commits) == 2
+
+    balances = await ledger_client.get("/internal/v1/balances", params={"owner_id": str(user_id)}, headers=HEADERS)
+    assert balances.json()["data"][0]["balance"] == "7500"
+
+
+async def test_consumidor_handle_omite_tipo_no_implementado(ledger_client) -> None:  # type: ignore[no-untyped-def]
+    consumer = LedgerEventConsumer(get_session_factory(), get_ledger_settings())
+    envelope = build_event(
+        event_type=ev.LEDGER_POSTED,
+        schema_version=1,
+        aggregate_id=str(uuid.uuid4()),
+        aggregate_type="LedgerTransaction",
+        producer="ledger",
+        payload={},
+    )
+    fake = _ConsumidorFalso()
+    await consumer._handle(fake, _mensaje(envelope, offset=30))
+    assert len(fake.commits) == 1
+
+
+async def test_consumidor_run_reintenta_tras_fallo(ledger_client, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    consumer = LedgerEventConsumer(get_session_factory(), get_ledger_settings())
+    calls = 0
+
+    async def _fallo() -> None:
+        nonlocal calls
+        calls += 1
+        if calls >= 2:
+            consumer._stopped.set()
+        raise RuntimeError("redpanda no disponible")
+
+    monkeypatch.setattr(consumer, "_consume", _fallo)
+    monkeypatch.setattr("ledger.consumer.RETRY_DELAY_SECONDS", 0.05)
+    await consumer.start()
+    assert await asyncio.wait_for(consumer._task, timeout=5) is None
+    assert calls >= 2
+    await consumer.stop()
+
+
+async def test_consumidor_stop_y_consume_con_doble_de_kafka(ledger_client, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    registros = [SimpleNamespace(topic="t", partition=0, offset=0, value=b"no es json")]
+    commits: list[Any] = []
+    consumer = LedgerEventConsumer(get_session_factory(), get_ledger_settings())
+
+    class _FalsoKafka(_ConsumidorFalso):
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            super().__init__()
+            self._peticiones = 0
+
+        async def start(self) -> None:
+            pass
+
+        async def getone(self) -> Any:
+            if self._peticiones < len(registros):
+                registro = registros[self._peticiones]
+                self._peticiones += 1
+                return registro
+            consumer._stopped.set()
+            return registros[0]
+
+        async def commit(self, offsets: Any) -> None:
+            commits.append(offsets)
+            await super().commit(offsets)
+
+        async def stop(self) -> None:
+            pass
+
+    monkeypatch.setattr("ledger.consumer.AIOKafkaConsumer", _FalsoKafka)
+
+    # stop() sin start(): rama falsa de `if self._task`
+    await consumer.stop()
+    assert consumer._task is None
+
+    # con la bandera limpiada, `_consume` procesa un mensaje y sale al volver la bandera
+    consumer._stopped.clear()
+    await consumer._consume()
+    assert len(commits) == 2
+    assert consumer._consumer is None
+
+
 # ------------------------------------------------------------------------ API pública (Q §2.6, F2.3)
 
 
@@ -816,6 +1041,15 @@ async def test_public_entries_lista_asientos_propios_y_bola(ledger_client) -> No
         headers={"Authorization": f"Bearer {_user_token(uuid.uuid4())}"},
     )
     assert ajeno_token.status_code == 404
+
+    # filtro por cuenta propia: devuelve exactamente sus asientos
+    propio_filtro = await ledger_client.get(
+        "/api/v1/ledger/entries",
+        params={**_range_days(), "account_id": cuenta_propia},
+        headers=headers,
+    )
+    assert propio_filtro.status_code == 200
+    assert {row["amount"] for row in propio_filtro.json()["data"]} == {"1000"}
 
 
 async def test_public_entries_cursor_sin_duplicados(ledger_client) -> None:  # type: ignore[no-untyped-def]
@@ -905,3 +1139,65 @@ async def test_public_statements_resumen_y_detalle(ledger_client) -> None:  # ty
     assert ajeno_list.json()["data"] == []
     ajeno_detail = await ledger_client.get(f"/api/v1/ledger/statements/{statement_id}", headers=ajeno_headers)
     assert ajeno_detail.status_code == 404
+
+
+async def test_public_statements_cursor_y_detalle_paginado(ledger_client) -> None:  # type: ignore[no-untyped-def]
+    owner = uuid.uuid4()
+    for currency, amount in (("USD", "100.00"), ("EUR", "50.00"), ("GBP", "25.00")):
+        body = _body(
+            entries=[
+                {
+                    "account_code": f"1200.RECEIVABLE.PSP.{currency}",
+                    "direction": "D",
+                    "amount": amount,
+                    "currency": currency,
+                },
+                {
+                    "account_code": f"2000.PAYABLE.CLIENT.{currency}.u_{owner.hex}",
+                    "direction": "C",
+                    "amount": amount,
+                    "currency": currency,
+                    "owner_id": str(owner),
+                },
+            ]
+        )
+        assert (await _post(ledger_client, body, key=str(uuid.uuid4()))).status_code == 201
+    headers = {"Authorization": f"Bearer {_user_token(owner)}"}
+
+    # con `has_more`, `next_cursor` codifica (mes, moneda) — encode_period_cursor
+    page1 = await ledger_client.get("/api/v1/ledger/statements", params={"limit": 1}, headers=headers)
+    assert page1.status_code == 200
+    assert page1.json()["page"]["has_more"] is True
+    assert page1.json()["page"]["next_cursor"]
+
+    completo = await ledger_client.get("/api/v1/ledger/statements", headers=headers)
+    items = completo.json()["data"]
+    assert len(items) == 3
+    medio = items[1]
+    cursor = encode_period_cursor(datetime.fromisoformat(medio["period"]["from"]), medio["currency"])
+
+    # cursor válido: la primera fila no coincide, el bucle avanza y pagina desde la siguiente
+    pagina = await ledger_client.get("/api/v1/ledger/statements", params={"cursor": cursor}, headers=headers)
+    assert pagina.status_code == 200
+    assert [row["statement_id"] for row in pagina.json()["data"]] == [items[2]["statement_id"]]
+    assert pagina.json()["page"]["has_more"] is False
+
+    # cursor válido sin coincidencia → 422 (rama `else` del bucle)
+    sin_coincidencia = await ledger_client.get(
+        "/api/v1/ledger/statements",
+        params={"cursor": encode_period_cursor(datetime(2020, 1, 1, tzinfo=UTC), "JPY")},
+        headers=headers,
+    )
+    assert sin_coincidencia.status_code == 422
+
+    # cursor corrupto → el decode falla → mismo 422 tipado
+    corrupto = await ledger_client.get("/api/v1/ledger/statements", params={"cursor": "!!!"}, headers=headers)
+    assert corrupto.status_code == 422
+
+    # detalle con cursor: el filtro de entradas usa (created_at, id)
+    detalle = await ledger_client.get(
+        f"/api/v1/ledger/statements/{items[0]['statement_id']}",
+        params={"cursor": encode_cursor(datetime.now(UTC), uuid.uuid4())},
+        headers=headers,
+    )
+    assert detalle.status_code == 200

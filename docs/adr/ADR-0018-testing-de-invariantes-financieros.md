@@ -56,6 +56,24 @@
 | Solo property-based sin unitarios de reglas | Difícil de diagnosticar (falta el caso concreto) y depende de la calidad de los generadores; se combina, no sustituye. |
 | Mutation testing como gate desde Fase 1 | Valor alto pero coste de CPU y de mantenimiento desproporcionado aún; se evalúa tras estabilizar la suite (no bloquea ahora). |
 
+## Estado de implementación (BUILD-024/025, 2026-09-30)
+
+| Elemento | Implementación | Estado |
+|---|---|---|
+| Suite de invariantes | `tests/invariants/` (I1–I5, 20 tests, hypothesis) con perfiles `ci` (30 ejemplos, derandomizado) y `nightly` (200 ejemplos) vía `HYPOTHESIS_PROFILE` | ✅ 20/20 |
+| Gates de cobertura | `tools/check_coverage.py` sobre `coverage.json`: ledger ≥90/≥85, wallet ≥85/≥85, global ≥80 líneas; ejecuta en el job `test` de CI tras pytest y en `nightly.yml` | ✅ ledger 100 %/100 %, wallet 100 %/100 %, total 94,6 % (342 tests) |
+| Medición de cobertura | `coverage` con **`core = "sysmon"`** (Python 3.14): el core `greenlet` emitía eventos `return` fantasma que distorsionaban el recuento de líneas/ramas; el upgrade 3.13→3.14 + sysmon lo elimina. Ver consecuencias técnicas abajo. | ✅ |
+| Lint anti-float | `tools/check_no_float.py`: AST sobre `services/*/src` y `packages/*/src` (literales, anotaciones y llamadas `float()`, con excepción de contextos temporales: timeouts/backoffs/buckets) + regex sobre `apps/` para `number`/literales en identificadores de dinero. Paso del job `quality`. Excepciones declaradas: `Quote.value`/`positive_float`/`OverviewQuote.value` en market-data (deuda de decimalización K §91). | ✅ con deuda declarada |
+| Nightly | `.github/workflows/nightly.yml` (cron 04:00 UTC + dispatch manual) con perfil `nightly` + gates de cobertura | ✅ |
+| Rust/Go benchmark | BUILD-032 (pendiente, sin hot spot medido) | ⏳ Fase 1+ |
+
+### Consecuencias técnicas del upgrade de runtime (relacionado con ADR-0003)
+
+- **Causa raíz resuelta**: con Python 3.13 y `coverage` sobre `greenlet`/`gevent`, los números de cobertura de `ledger`/`wallet` eran anómalos (eventos `return` fantasma). Con Python 3.14 y `core = "sysmon"` la medición es estable y reproducible; la suite completa pasa de 260 a 342 tests con gates reales verificables.
+- **Alcance del gate de cobertura**: hoy cubre los servicios financieros existentes (`ledger`, `wallet`) + umbral global; `payments`/`trading`/`risk` (en ADR-0003) se incorporarán al gate en cuanto sus servicios existan.
+- **Sin path-filter**: el gate corre en cada PR (más estricto y más simple que el path-filter hipotético del punto 3; se revisará si el tiempo de CI crece).
+- **Deprecación conocida**: `platform_kernel/__init__.py` fija `asyncio.WindowsSelectorEventLoopPolicy`, deprecado y eliminado en Python 3.16; sustituir antes del próximo upgrade de runtime (afecta solo a Windows local, no a las imágenes Linux).
+
 ## Referencias
 
 - `docs/phase0/L-ledger-architecture.md` §8 (invariantes 1–10 y cobertura mínima Fase 2)

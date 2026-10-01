@@ -2,7 +2,7 @@
 name = "identity-service"
 version = "0.1.0"
 description = "Identity Service — usuarios, sesiones, MFA, RBAC"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "platform-kernel",
     "platform-contracts",

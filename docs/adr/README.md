@@ -8,7 +8,7 @@ Formato: Título · Estado · Fecha · Contexto · Decisión · Consecuencias ·
 |---|---|---|
 | [0001](ADR-0001-monorepo.md) | Monorepo | Monorepo único vs multirepo |
 | [0002](ADR-0002-estrategia-de-descomposicion.md) | Estrategia de descomposición | Microservicios desde el inicio + criterios de extracción |
-| [0003](ADR-0003-lenguaje-de-servicio.md) | Lenguaje de servicio | Python 3.13/FastAPI; Rust/Go solo con benchmark |
+| [0003](ADR-0003-lenguaje-de-servicio.md) | Lenguaje de servicio | Python 3.14/FastAPI; Rust/Go solo con benchmark |
 | [0004](ADR-0004-api-first-y-contratos.md) | API first y contratos | OpenAPI fuente única, contract tests, versionado |
 | [0005](ADR-0005-base-de-datos-por-servicio.md) | Base de datos por servicio | Schema aislado por servicio; ledger propio |
 | [0006](ADR-0006-representacion-del-dinero.md) | Representación del dinero | NUMERIC/Decimal, nunca float; reglas de redondeo |

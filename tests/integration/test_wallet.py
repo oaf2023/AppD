@@ -9,10 +9,13 @@ PostgreSQL (`platform_wallet`); ledger y accounts se doblan con MockTransport
 
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -22,6 +25,7 @@ from platform_kernel.events import EventEnvelope, build_event
 from platform_kernel.security.tokens import new_access_token
 from sqlalchemy import select
 from wallet.config import get_wallet_settings
+from wallet.consumer import WalletEventConsumer
 from wallet.db import get_session_factory
 from wallet.models import Balance, BalanceMovement, BalanceSnapshot, ProcessedEvent
 
@@ -511,3 +515,174 @@ async def test_reconciliador_marca_stale_y_snapshot(wallet_app, wallet_client) -
     response = await wallet_client.get("/api/v1/wallet/balances", headers=_auth(user_id))
     assert response.json()["reconciliation"]["stale"] is False
     assert response.json()["reconciliation"]["checked_at"] is not None
+
+
+async def test_reconciliador_stop_cierra_el_cliente(wallet_app) -> None:  # type: ignore[no-untyped-def]
+    import httpx
+    from wallet.reconciler import Reconciler
+
+    cliente = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={"data": [], "as_of": None}))
+    )
+    reconciler = Reconciler(get_session_factory(), get_wallet_settings(), client=cliente)
+    # sin task iniciada: rama falsa de `if self._task`, pero cierra el cliente HTTP
+    await reconciler.stop()
+    assert reconciler._client is None
+
+
+async def test_reconciliador_run_registra_fallo_y_sale_natural(wallet_app, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from wallet.reconciler import Reconciler
+
+    settings = get_wallet_settings().model_copy(update={"reconcile_interval_seconds": 0})
+    reconciler = Reconciler(get_session_factory(), settings)
+    llamadas = 0
+
+    async def _fallo() -> int:
+        nonlocal llamadas
+        llamadas += 1
+        raise RuntimeError("ledger no responde")
+
+    monkeypatch.setattr(reconciler, "run_once", _fallo)
+    await reconciler.start()
+    # intervalo efectivo 1 s: el primer `wait_for` expira (TimeoutError → continue)
+    # y entra un segundo ciclo; después se marca la parada para la salida natural
+    await asyncio.sleep(1.15)
+    reconciler._stopped.set()
+    assert await asyncio.wait_for(reconciler._task, timeout=5) is None
+    assert llamadas >= 2
+    await reconciler.stop()
+
+
+async def test_reconciliador_detecta_saldo_sin_proyeccion(wallet_app) -> None:  # type: ignore[no-untyped-def]
+    from wallet.reconciler import Reconciler
+
+    user_id = str(uuid.uuid4())
+    # ledger con saldo pero wallet sin fila de proyección → mismatch del segundo bucle
+    wallet_app.state.ledger_balances[(user_id, "USD")] = "500"
+    reconciler = Reconciler(get_session_factory(), get_wallet_settings(), client=wallet_app.state.ledger_client)
+
+    stale = await reconciler.run_once()
+    assert stale >= 1
+
+
+# --------------------------------------------------------------------------- consumidor (Q §2.5)
+
+
+class _ConsumidorFalso:
+    """Doble de `AIOKafkaConsumer` que sólo registra los `commit`."""
+
+    def __init__(self) -> None:
+        self.commits: list[Any] = []
+
+    async def commit(self, offsets: Any) -> None:
+        self.commits.append(offsets)
+
+
+def _mensaje(envelope: EventEnvelope, offset: int = 0) -> SimpleNamespace:
+    return SimpleNamespace(
+        topic="ledger.ledger_transaction.ledger_posted",
+        partition=0,
+        offset=offset,
+        value=json.dumps(envelope.model_dump(mode="json")).encode(),
+    )
+
+
+async def test_consumidor_handle_descarta_mensaje_invalido(wallet_app) -> None:  # type: ignore[no-untyped-def]
+    consumer = WalletEventConsumer(get_session_factory(), get_wallet_settings())
+    fake = _ConsumidorFalso()
+    await consumer._handle(fake, SimpleNamespace(topic="t", partition=0, offset=4, value=b"no es json"))
+    assert len(fake.commits) == 1
+    assert list(fake.commits[0].values()) == [5]
+
+
+async def test_consumidor_handle_aplica_y_deduplica(wallet_app) -> None:  # type: ignore[no-untyped-def]
+    consumer = WalletEventConsumer(get_session_factory(), get_wallet_settings())
+    user_id = str(uuid.uuid4())
+    envelope = _ledger_posted(
+        [
+            _entry(direction="D", amount="1000.00", owner_id=None, owner_type="control"),
+            _entry(direction="C", amount="1000.00", owner_id=user_id),
+        ]
+    )
+    fake = _ConsumidorFalso()
+    await consumer._handle(fake, _mensaje(envelope, offset=0))
+    await consumer._handle(fake, _mensaje(envelope, offset=1))
+    assert len(fake.commits) == 2
+
+    balances = await _balances(user_id)
+    assert balances and balances[0].available == Decimal("1000")
+
+
+async def test_consumidor_handle_omite_tipo_desconocido(wallet_app) -> None:  # type: ignore[no-untyped-def]
+    consumer = WalletEventConsumer(get_session_factory(), get_wallet_settings())
+    envelope = build_event(
+        event_type=ev.DEMO_ACCOUNT_CREATED,
+        schema_version=ev.EVENT_TYPES_PHASE2[ev.DEMO_ACCOUNT_CREATED],
+        aggregate_id=str(uuid.uuid4()),
+        aggregate_type=ev.EVENT_AGGREGATE_TYPE[ev.DEMO_ACCOUNT_CREATED],
+        producer="accounts",
+        payload={"user_id": str(uuid.uuid4()), "currency": "USD", "initial_balance": "100"},
+    )
+    fake = _ConsumidorFalso()
+    await consumer._handle(fake, _mensaje(envelope, offset=0))
+    assert len(fake.commits) == 1
+
+
+async def test_consumidor_run_reintenta_tras_fallo(wallet_app, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    consumer = WalletEventConsumer(get_session_factory(), get_wallet_settings())
+    calls = 0
+
+    async def _fallo() -> None:
+        nonlocal calls
+        calls += 1
+        if calls >= 2:
+            consumer._stopped.set()
+        raise RuntimeError("redpanda no disponible")
+
+    monkeypatch.setattr(consumer, "_consume", _fallo)
+    monkeypatch.setattr("wallet.consumer.RETRY_DELAY_SECONDS", 0.05)
+    await consumer.start()
+    assert await asyncio.wait_for(consumer._task, timeout=5) is None
+    assert calls >= 2
+    await consumer.stop()
+
+
+async def test_consumidor_stop_y_consume_con_doble_de_kafka(wallet_app, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    consumer = WalletEventConsumer(get_session_factory(), get_wallet_settings())
+    registros = [SimpleNamespace(topic="t", partition=0, offset=0, value=b"no es json")]
+    commits: list[Any] = []
+
+    class _FalsoKafka(_ConsumidorFalso):
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            super().__init__()
+            self._peticiones = 0
+
+        async def start(self) -> None:
+            pass
+
+        async def getone(self) -> Any:
+            if self._peticiones < len(registros):
+                registro = registros[self._peticiones]
+                self._peticiones += 1
+                return registro
+            consumer._stopped.set()
+            return registros[0]
+
+        async def commit(self, offsets: Any) -> None:
+            commits.append(offsets)
+            await super().commit(offsets)
+
+        async def stop(self) -> None:
+            pass
+
+    monkeypatch.setattr("wallet.consumer.AIOKafkaConsumer", _FalsoKafka)
+
+    # stop() sin start(): rama falsa de `if self._task`
+    await consumer.stop()
+    assert consumer._task is None
+
+    # con la bandera limpiada, `_consume` procesa un mensaje y sale al volver la bandera
+    consumer._stopped.clear()
+    await consumer._consume()
+    assert len(commits) == 2
+    assert consumer._consumer is None

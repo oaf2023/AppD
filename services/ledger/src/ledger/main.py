@@ -43,6 +43,15 @@ def create_app(*, auto_migrate: bool | None = None) -> FastAPI:
             await relay.start()
         app.state.relay = relay
 
+        retention_sweep = None
+        if settings.retention_sweep_enabled:
+            from ledger.db import get_session_factory
+            from ledger.retention import RetentionSweep
+
+            retention_sweep = RetentionSweep(get_session_factory(), settings)
+            await retention_sweep.start()
+        app.state.retention_sweep = retention_sweep
+
         consumer = None
         if settings.event_consumer_enabled:
             from ledger.consumer import LedgerEventConsumer
@@ -55,6 +64,8 @@ def create_app(*, auto_migrate: bool | None = None) -> FastAPI:
         yield
         if consumer is not None:
             await consumer.stop()
+        if retention_sweep is not None:
+            await retention_sweep.stop()
         if relay is not None:
             await relay.stop()
         await get_engine().dispose()

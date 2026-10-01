@@ -45,7 +45,7 @@ Toda versión listada es **versión objetivo fijada en lockfile** (`uv.lock`, `p
 
 | Elección | Detalle |
 |---|---|
-| **Python 3.13** | `asyncio.TaskGroup` (concurrencia estructurada, `ExceptionGroup`), rendimiento de runtime mejorado, madurez del ecosistema cuantitativo/data (necesario para `market-data`, `trading`, `risk` en fases posteriores). |
+| **Python 3.14** | `asyncio.TaskGroup` (concurrencia estructurada, `ExceptionGroup`), rendimiento de runtime mejorado, madurez del ecosistema cuantitativo/data (necesario para `market-data`, `trading`, `risk` en fases posteriores). Versión original 3.13; upgrade a 3.14 en BUILD-024 (sysmon como core de `coverage`, ADR-0018). |
 | **FastAPI** | Nativo async (Starlette), validación y OpenAPI generados desde el mismo modelo Pydantic → contrato único sin duplicación, DI ligera, buena instrumentación OTel, el framework async más productivo de Python. |
 | **Pydantic v2** | Núcleo en Rust (`pydantic-core`) → validación rápida; modo `strict` para payloads financieros; discriminados/union types para envelope de eventos y respuestas tipadas. |
 | **SQLAlchemy 2 async + Alembic** | Estilo 2.0 tipado, async sobre psycopg/asyncpg, `NUMERIC(38,18)` → `Decimal`; Alembic = migraciones versionadas por servicio (`N-monorepo-structure.md` §8). |
@@ -65,7 +65,7 @@ Toda versión listada es **versión objetivo fijada en lockfile** (`uv.lock`, `p
 
 ## 4. Lenguaje de latencia crítica: por qué NO Rust/Go en Fase 1 (ADR-0003)
 
-**Decisión**: Fase 1 corre 100 % en Python 3.13. No se introduce Rust ni Go.
+**Decisión**: Fase 1 corre 100 % en Python 3.14 (upgrade desde 3.13, BUILD-024). No se introduce Rust ni Go.
 
 **Motivos**:
 1. **No hay hot spot medido todavía.** El código que existe es foundation (gateway, identity, audit): I/O-bound sobre PostgreSQL/Redis/Redpanda, no cómputo-bound. Optimizar sin perfil es especulación.
@@ -179,7 +179,7 @@ Alertas: burn-rate multiventana para disponibilidad/errores; nunca alerta sin da
 | Frontend framework | Next.js 15 App Router + React 19 | Next 15.x / React 19.x | Vite+SPA, Remix, Angular | SSR/SEO público, ecosistema, RSC | Cambios de API en App Router/RSC |
 | Estilos/design system | Tailwind + `packages/ui` propio | Tailwind 4.x (3.x si incompatibilidad) | UI kit de terceros, CSS-in-JS | Identidad propia, tokens, RTL | Deriva de tokens sin gobernanza |
 | Lenguaje cliente | TypeScript estricto | TS 5.x | JS sin tipos | Errores tempranos en dinero/UI | — |
-| Lenguaje servicios | Python 3.13 | 3.13.x | Node/Nest, Go, Java/Spring, Django | Ecosistema cuantitativo, async, stack decidido | GIL en cómputo puro → benchmark ADR-0003 |
+| Lenguaje servicios | Python 3.14 | 3.14.x | Node/Nest, Go, Java/Spring, Django | Ecosistema cuantitativo, async, stack decidido | GIL en cómputo puro → benchmark ADR-0003 |
 | API framework | FastAPI + Pydantic v2 | FastAPI 0.11x / Pydantic 2.x | Django DRF, Flask, gRPC | OpenAPI automático, async, validación estricta | Dependencia de un maintainer principal |
 | ORM/migraciones | SQLAlchemy 2 async + Alembic | 2.0.x / Alembic 1.x | SQLModel, peewee, raw SQL | Tipado, async, madurez | Migraciones manuales mal revisadas |
 | BD transaccional | PostgreSQL 17 | 17.x | MySQL, MongoDB, SQL distribuido gestionado | ACID/`NUMERIC`, schemas aislados | Configuración de réplicas/backup pendiente de proveedor |

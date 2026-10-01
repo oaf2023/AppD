@@ -15,7 +15,7 @@ el dominio permanece como marcador literal `[DOMAIN]` hasta que Legal confirme s
 ## Requisitos
 
 - Docker Desktop (PostgreSQL 17 y Redis 7 en compose)
-- Python 3.13 + [uv](https://docs.astral.sh/uv/)
+- Python 3.14 + [uv](https://docs.astral.sh/uv/)
 - Node.js ≥ 22 (npm incluido)
 - Opcional: `kubectl` (validación de manifests), perfil `obs` de compose (observabilidad)
 

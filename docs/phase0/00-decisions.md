@@ -46,7 +46,7 @@ Cada servicio: schema PostgreSQL propio (`identity`, `audit`, ...), sin acceso c
 | Capa | Tecnología | Justificación |
 |---|---|---|
 | Frontend | Next.js 15 (App Router), React, TypeScript, Tailwind CSS, PWA | SSR/SSG para SEO público, ecosistema, i18n/RTL |
-| Backend | Python 3.13, FastAPI, Pydantic v2, SQLAlchemy 2 async, asyncio | requisito del prompt; ecosistema cuantitativo/data |
+| Backend | Python 3.14 (original 3.13; upgrade BUILD-024, ADR-0018), FastAPI, Pydantic v2, SQLAlchemy 2 async, asyncio | requisito del prompt; ecosistema cuantitativo/data |
 | Latencia crítica | **Sin Rust/Go en Fase 1**; se reintenta solo con benchmark que lo justifique (ADR-0003) | evitar lenguaje adicional sin evidencia |
 | Base transaccional | PostgreSQL 17 | ACID para dinero |
 | Cache/sesión/rate-limit | Redis 7 | patrones simples y probados |

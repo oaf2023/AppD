@@ -50,7 +50,7 @@ REGISTER → EMAIL/PHONE VERIFICATION → PERSONAL DATA → COUNTRY/JURISDICTION
 ### 3.1 Estructura
 
 ```python
-# services/kyc/app/providers/base.py  (Python 3.13, Pydantic v2)
+# services/kyc/app/providers/base.py  (Python 3.14, Pydantic v2)
 class KycProviderAdapter(Protocol):
     provider_code: str  # opaco, no se expone marca al core
     capabilities: frozenset[CheckType]

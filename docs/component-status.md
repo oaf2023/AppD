@@ -1,6 +1,6 @@
 # Estado de componentes — clasificación
 
-Fecha de verificación: 2026-09-30 · Fase 0 + Fase 1 (foundation) + F2.1 (ledger) + F2.2 (accounts) + F2.3 (wallet · extractos · cierre/recarga)
+Fecha de verificación: 2026-09-30 · Fase 0 + Fase 1 (foundation) + F2.1 (ledger) + F2.2 (accounts) + F2.3 (wallet · extractos · cierre/recarga) + BUILD-024/025 (invariantes · gates de cobertura · retención)
 Proyecto: `MonedasAR` · Fuente de verdad de decisiones: `docs/phase0/00-decisions.md`
 
 Leyenda:
@@ -182,6 +182,27 @@ emitido) → `POST /api/v1/wallet/transfers` sin `Idempotency-Key` **400** y a
 destino inexistente **404** (BOLA) → relectura de balances post-recarga coherente
 (`available=10000`, `stale=false`).
 
+Evidencia BUILD-024/025 — invariantes, gates de cobertura y retención
+(2026-09-30, verificación local): suite de invariantes `tests/invariants/`
+(I1–I5, **20/20** con perfil `ci`: hypothesis derandomizado, 30 ejemplos) y
+retención de asientos (`ledger/retention.py` con sweep `RETENTION_SWEEP_ENABLED`
+documentado en `.env.example`, replay de saldos verificado); upgrade de runtime
+Python 3.13→3.14 (`.python-version`, 7 Dockerfiles `python3.14-bookworm-slim` /
+`python:3.14-slim`, mypy `python_version=3.14`, ruff `target-version=py314`) con
+`coverage core="sysmon"` — causa raíz de la anomalía de cobertura resuelta
+(eventos `return` fantasma de greenlet) — y medición estable: `uv run pytest
+--cov` → **342 passed**, `services/ledger` **100 % líneas / 100 % ramas**
+(1214/1214, 212/212), `services/wallet` **100 % / 100 %** (795/795, 122/122),
+total 94,6 % líneas; gates automatizados nuevos: `tools/check_coverage.py`
+(ledger ≥90/≥85, wallet ≥85/≥85, global ≥80) en el job `test` de CI y
+`tools/check_no_float.py` (AST sobre `services/`+`packages/` con excepción de
+contextos temporales + regex TS en `apps/`; deuda declarada: precios market-data
+en float, K §91) en el job `quality`; workflow nuevo `.github/workflows/nightly.yml`
+(cron 04:00 UTC + dispatch, `HYPOTHESIS_PROFILE=nightly` con 200 ejemplos y
+gates de cobertura); docs reconciliados (ADR-0018 “Estado de implementación”,
+ADR-0003/README/phase0 3.13→3.14, W-build-now BUILD-024/025 `IMPLEMENTADO`,
+`helpers.py` y `.env.example` con `RETENTION_SWEEP_*`).
+
 ---
 
 ## 1. Núcleo y contratos
@@ -265,7 +286,9 @@ registro→demo→wallet `10000`→extractos→close 409→reload 202→transfer
 
 | Componente | Clasificación | Notas |
 |---|---|---|
-| `.github/workflows/ci.yml` | IMPLEMENTADO | 6 jobs: `quality` (ruff/format/mypy/fronteras/OpenAPI), `test` (pytest con PostgreSQL+Redpanda efímeros, 6 bases incl. `platform_wallet`), `web` (lint/typecheck/build), `security` (gitleaks+pip-audit+npm audit), `supply-chain` (docker build+SBOM syft+trivy CRITICAL, 7 imágenes incl. `wallet`), `infra` (terraform/kustomize/compose); actions pinnadas por SHA; CI 6/6 verde en GitHub (último cierre: commit `7e72200`, F2.3) |
+| `.github/workflows/ci.yml` | IMPLEMENTADO | 6 jobs: `quality` (ruff/format/mypy/fronteras/anti-float/OpenAPI), `test` (pytest con cobertura + gates BUILD-024, PostgreSQL+Redpanda efímeros, 6 bases incl. `platform_wallet`), `web` (lint/typecheck/build), `security` (gitleaks+pip-audit+npm audit), `supply-chain` (docker build+SBOM syft+trivy CRITICAL, 7 imágenes incl. `wallet`), `infra` (terraform/kustomize/compose); actions pinnadas por SHA; Python 3.14 fijado en los jobs con uv (`.python-version`); CI 6/6 verde en GitHub (último cierre: commit `7e72200`, F2.3) |
+| `.github/workflows/nightly.yml` (BUILD-024) | IMPLEMENTADO | Cron 04:00 UTC + `workflow_dispatch`; suite completa con `HYPOTHESIS_PROFILE=nightly` (200 ejemplos, sin derandomizar) + gates de cobertura; artefacto `coverage-nightly` 30 d |
+| Gates de cobertura y lint anti-float (BUILD-024, ADR-0018) | IMPLEMENTADO | `tools/check_coverage.py` (ledger ≥90/≥85, wallet ≥85/≥85, global ≥80 líneas sobre `coverage.json`) en el job `test` y en `nightly.yml`; `tools/check_no_float.py` (AST `services/`+`packages/`, regex TS `apps/`) en `quality`; deuda declarada: `Quote.value`/`positive_float`/`OverviewQuote.value` en float (decimalización market-data K §91) |
 | dependabot + secret-scan + análisis de dependencias + SBOM/CVE | IMPLEMENTADO | `.github/dependabot.yml` (pip/npm/actions/docker); gitleaks con `.gitleaks.toml`; pip-audit vía `uv export`; npm audit (bloqueo a nivel crítico); syft SBOM como artefacto; trivy CRITICAL bloquea |
 | Path filters por servicio | PARCIAL | Solo `paths-ignore` global de `docs/**`/`**/*.md`; filtros por servicio cuando haya más teams/paths (ADR de fase posterior) |
 | CODEOWNERS y branch protection | REQUIERE DECISIÓN | No hay usernames/owners conocidos en el repo; requiere cuentas de GitHub (G-security §1.7) |
@@ -275,7 +298,7 @@ registro→demo→wallet `10000`→extractos→close 409→reload 202→transfer
 
 | Componente | Clasificación |
 |---|---|
-| Ledger double-entry, wallet, cuentas de trading (Fase 2) | PARCIAL | **F2.1 ledger IMPLEMENTADO 2026-09-29** (asientos double-entry append-only, idempotencia ADR-0010, outbox `LedgerPosted`); **F2.2 accounts IMPLEMENTADO 2026-09-30** (cuentas demo/live con gating, cursor, auto-provisión, matriz de jurisdicciones); **F2.3 wallet + extractos + cierre/recarga IMPLEMENTADO 2026-09-30** (proyección wallet con reconciliador, API pública §2.6, `GET /internal/v1/balances`, cierre con saldo cero y recarga de demo vía evento #17); **sigue pendiente** export CSV/PDF de extractos y rutas admin (F7), reservas/holds internos de wallet (§3, F4), FX de `conversion-rates` (L §10, no determinado) |
+| Ledger double-entry, wallet, cuentas de trading (Fase 2) | PARCIAL | **F2.1 ledger IMPLEMENTADO 2026-09-29** (asientos double-entry append-only, idempotencia ADR-0010, outbox `LedgerPosted`); **F2.2 accounts IMPLEMENTADO 2026-09-30** (cuentas demo/live con gating, cursor, auto-provisión, matriz de jurisdicciones); **F2.3 wallet + extractos + cierre/recarga IMPLEMENTADO 2026-09-30** (proyección wallet con reconciliador, API pública §2.6, `GET /internal/v1/balances`, cierre con saldo cero y recarga de demo vía evento #17); **BUILD-024 invariantes/gates y BUILD-025 retención IMPLEMENTADOS 2026-09-30** (20/20 invariantes, ledger y wallet 100 %/100 %, lint anti-float, nightly); **sigue pendiente** export CSV/PDF de extractos y rutas admin (F7), reservas/holds internos de wallet (§3, F4), FX de `conversion-rates` (L §10, no determinado) |
 | Market data adapters + streaming WS (Fase 3) | PARCIAL | **Adelantado 2026-09-28**: snapshot `overview` con adapters reales keyless (Frankfurter/ECB, Kraken/CoinGecko), cache, breaker y failover; **sigue pendiente** ticks/velas/WS, symbol master, histórico y feeds con redistribución (X-07) |
 | Trading OMS/EMS, posiciones, margin, risk (Fase 4) | PENDIENTE |
 | Pagos (depósitos/retiros) | REQUIERE PROVEEDOR (adapters de pago) |
@@ -309,3 +332,8 @@ registro→demo→wallet `10000`→extractos→close 409→reload 202→transfer
 10. Windows + `localhost` → `::1` cuesta ~2 s por conexión a puertos con publicación
     IPv4 de Docker; todos los defaults locales ya usan `127.0.0.1` — no reintroducir
     `localhost` en DSNs ni URLs de servicio (ver `.env.example`).
+11. `platform_kernel/__init__.py:13` fija `asyncio.WindowsSelectorEventLoopPolicy`:
+    deprecado y **eliminado en Python 3.16** (hoy 3.14 funciona con aviso
+    `DeprecationWarning`); sustituir por `asyncio.Runner`/`loop_factory` antes del
+    próximo upgrade de runtime (solo afecta a Windows local; las imágenes Linux no
+    lo usan). Anotado también en ADR-0018.

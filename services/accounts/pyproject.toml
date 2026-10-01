@@ -2,7 +2,7 @@
 name = "accounts-service"
 version = "0.1.0"
 description = "Accounts Service - cuentas de trading demo/live, jurisdicción y auto-provisión"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "platform-kernel",
     "platform-contracts",

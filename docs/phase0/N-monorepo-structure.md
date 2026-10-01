@@ -120,6 +120,8 @@ platform/
 │
 ├── scripts/                      # automatización de repo (bash/pwsh/python): scaffolding de
 │   │                             # servicio, generación de clientes, chequeos de frontera
+├── tools/                        # gates estáticos del repo (Python): check_boundaries,
+│   │                             # export_openapi --check, check_coverage, check_no_float
 ├── tests/                        # tests que cruzan servicios (no viven en un servicio)
 │   ├── contract/                 # valida OpenAPI/eventos vs implementación (productor y consumidor)
 │   ├── e2e/                      # Playwright: flujos DEMO completos contra compose
@@ -161,6 +163,7 @@ platform/
 | `docs/runbooks` | Operación bajo alerta/incidente | Platform/Observability + owner del servicio | Procedimientos verificables | Especificaciones de feature |
 | `docs/api` | Guías y política de API/WS | Platform/API | Uso, autenticación, deprecación, versionado | El contrato en sí (eso es `platform-contracts`) |
 | `scripts` | Automatización de repo | Platform/Infra | Scaffolding, generadores, chequeos | Lógica de negocio; despliegues a producción |
+| `tools` | Gates estáticos reproducibles (fronteras, OpenAPI, cobertura, anti-float) | Platform/Infra | Verificación ejecutable en local y en CI (`check_boundaries.py`, `export_openapi.py --check`, `check_coverage.py`, `check_no_float.py`) | Lógica de negocio; acciones que solo deben ocurrir en CI o en despliegue |
 | `tests/contract` | Compatibility de contratos | Platform/API | Tests productor/consumidor | Tests unitarios de un servicio |
 | `tests/e2e` | Flujos completos DEMO | Platform/QA | Playwright contra compose | Pruebas de integración de un solo servicio |
 | `tests/invariantes` | Propiedades financieras globales | Trading/Ledger + QA | hypothesis sobre ledger/wallet/idempotency | Casos de UI |

@@ -2,7 +2,7 @@
 name = "ledger-service"
 version = "0.1.0"
 description = "Ledger Service - double-entry append-only, fuente de verdad financiera"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "platform-kernel",
     "platform-contracts",

@@ -27,7 +27,7 @@ Proyecto: `MonedasAR` · Dominio: `[DOMAIN]` · Marca: `MonedasAR`
 ### 2.1 `PaymentProviderAdapter` (interface única de salida a un proveedor)
 
 ```python
-# services/payments/app/providers/base.py  (Python 3.13, Pydantic v2)
+# services/payments/app/providers/base.py  (Python 3.14, Pydantic v2)
 class PaymentProviderAdapter(Protocol):
     provider_code: str  # identificador opaco de config, p.ej. 'prov_a' — no expone marca al core
     provider_category: ProviderCategory  # card_acquirer | bank_rail | crypto_rail | local_wallet | e_money_issuer

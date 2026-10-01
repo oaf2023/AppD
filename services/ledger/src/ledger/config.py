@@ -5,9 +5,10 @@ from __future__ import annotations
 from functools import lru_cache
 
 from platform_kernel.config import KernelSettings
+from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
-#: Retención de las claves de idempotencia: 7 días (L §6).
+#: Retención de las claves de idempotencia: 7 días (L §6, L §9).
 IDEMPOTENCY_TTL_SECONDS = 604800
 
 
@@ -28,6 +29,14 @@ class LedgerSettings(KernelSettings):
     event_consumer_enabled: bool = True
 
     idempotency_ttl_seconds: int = IDEMPOTENCY_TTL_SECONDS
+
+    # Retención (L §9, BUILD-025): el TTL de idempotencia (7 días) vive en el
+    # `expires_at` de cada fila al escribirla; aquí solo hace falta la ventana
+    # del outbox tras publicar y los knobs de la purga (`ledger.retention`).
+    retention_sweep_enabled: bool = True
+    retention_sweep_interval_seconds: int = Field(default=3600, gt=0)
+    retention_batch_size: int = Field(default=1000, gt=0)
+    outbox_retention_days: int = Field(default=30, ge=1)
 
 
 @lru_cache(maxsize=1)

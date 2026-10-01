@@ -1,6 +1,6 @@
 # MonedasAR Ledger Service - imagen multi-stage, non-root.
 # Build: docker build -f services/ledger/Dockerfile -t platform/ledger:dev .
-FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS builder
+FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim AS builder
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -15,7 +15,7 @@ COPY services/ledger ./services/ledger
 
 RUN uv sync --frozen --no-dev --no-editable --package ledger-service
 
-FROM python:3.13-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 RUN useradd --system --uid 10001 --create-home appuser
 

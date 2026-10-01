@@ -35,7 +35,8 @@ os.environ.update(
         "LEDGER_URL": "http://127.0.0.1:18085",
         "ACCOUNTS_URL": "http://127.0.0.1:18086",
         "WALLET_URL": "http://127.0.0.1:18087",
-        # reconciliador off en tests: se ejercita con `Reconciler.run_once` directo
+        # "0" → el lifespan de wallet NO arranca el reconciliador (main.py: >0);
+        # los tests lo ejercitan directo con Reconciler.run_once (en _run el mínimo es 1 s)
         "WALLET_RECONCILE_INTERVAL_SECONDS": "0",
         "FLAG_MFA": "true",
         "REQUIRE_EMAIL_VERIFICATION": "true",

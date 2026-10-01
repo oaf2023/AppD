@@ -2,7 +2,7 @@
 name = "wallet-service"
 version = "0.1.0"
 description = "Wallet Service - proyección de balances, movimientos y transferencias internas"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "platform-kernel",
     "platform-contracts",

@@ -1,0 +1,99 @@
+# Nightly — suite extendida con perfil hypothesis `nightly` (200 ejemplos,
+# sin derandomizar) + gates de cobertura (BUILD-024, ADR-0018, REQ-074).
+# Duplica la infraestructura de `ci.yml` (job `test`); mantener ambos en sincronía.
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 4 * * *" # 04:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  extended-tests:
+    name: Pruebas extendidas (perfil nightly) + cobertura
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: platform
+          POSTGRES_PASSWORD: platform_local_dev_only
+          POSTGRES_DB: platform
+        ports:
+          - "5433:5432"
+        options: >-
+          --health-cmd "pg_isready -U platform -d platform"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      REDPANDA_BOOTSTRAP_SERVERS: 127.0.0.1:19092
+      HYPOTHESIS_PROFILE: nightly
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: "0.10.4"
+          python-version: "3.14"
+      - name: Sincronizar dependencias
+        run: uv sync --frozen --all-packages
+      - name: Crear bases por servicio
+        run: |
+          export PGPASSWORD=platform_local_dev_only
+          for db in platform_identity platform_audit platform_gateway platform_ledger platform_accounts platform_wallet; do
+            psql -h localhost -p 5433 -U platform -d platform -c "CREATE DATABASE ${db};"
+          done
+      - name: Levantar Redpanda
+        run: |
+          for attempt in 1 2 3; do
+            docker rm -f redpanda 2>/dev/null || true
+            if docker run -d --name redpanda -p 19092:19092 \
+              docker.redpanda.com/redpandadata/redpanda:v24.3.4 \
+              redpanda start --overprovisioned --smp 1 --memory 512M --reserve-memory 0M \
+              --node-id 0 --check=false \
+              --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092 \
+              --advertise-kafka-addr internal://127.0.0.1:9092,external://127.0.0.1:19092 \
+              2>/tmp/rp-run.log; then
+              break
+            fi
+            echo "::warning::docker run de Redpanda (intento ${attempt}) falló: $(tr '\n' ' ' </tmp/rp-run.log)"
+            sleep 10
+            if [ "${attempt}" = "3" ]; then
+              echo "::error::docker run de Redpanda falló 3 veces: $(tr '\n' ' ' </tmp/rp-run.log)"
+              exit 1
+            fi
+          done
+          healthy=0
+          for ((i=1; i<=60; i++)); do
+            out=$(docker exec redpanda rpk cluster health 2>/dev/null || true)
+            if [[ "${out}" == *Healthy:*true* ]] && \
+              docker exec redpanda rpk cluster info --brokers 127.0.0.1:19092 >/dev/null 2>&1; then
+              healthy=1
+              break
+            fi
+            sleep 3
+          done
+          if [ "${healthy}" != "1" ]; then
+            echo "::error::Redpanda no quedó saludable en 180s. Estado: $(docker ps -a --filter name=redpanda --format '{{.Status}}'). Logs: $(docker logs redpanda 2>&1 | tail -n 25 | tr '\n' '|')"
+            exit 1
+          fi
+          docker exec redpanda rpk cluster health
+          docker exec redpanda rpk cluster info --brokers 127.0.0.1:19092
+      - name: pytest (perfil nightly) con cobertura
+        run: uv run pytest --cov --cov-report=json --cov-report=term
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: coverage-nightly
+          path: coverage.json
+          retention-days: 30
+          if-no-files-found: ignore
+      - name: Gates de cobertura (BUILD-024)
+        run: uv run python tools/check_coverage.py

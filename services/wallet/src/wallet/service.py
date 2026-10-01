@@ -67,7 +67,7 @@ def _key_occurred_at(idempotency_key: str) -> datetime:
         if stamp_ms < 1_577_836_800_000 or stamp_ms > 4_102_444_800_000:  # 2020-01-01..2100-01-01
             return utcnow()
         return datetime.fromtimestamp(stamp_ms / 1000, tz=UTC)
-    except (ValueError, OSError, OverflowError):
+    except ValueError, OSError, OverflowError:
         return utcnow()
 
 

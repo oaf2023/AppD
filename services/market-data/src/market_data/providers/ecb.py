@@ -61,7 +61,7 @@ class EcbProvider:
             try:
                 code = currencies[int(parts[currency_idx])]
                 observations = entry["observations"]
-            except (IndexError, ValueError, KeyError, TypeError):
+            except IndexError, ValueError, KeyError, TypeError:
                 continue
             if code not in FOREX_CODES or not isinstance(observations, dict) or not observations:
                 continue
@@ -70,7 +70,7 @@ class EcbProvider:
                 row = observations[time_idx]
                 value = positive_float(row[0]) if isinstance(row, list) and row else None
                 date = str(time_values[int(time_idx)]["id"])
-            except (ValueError, IndexError, KeyError, TypeError):
+            except ValueError, IndexError, KeyError, TypeError:
                 continue
             if value is None:
                 continue
