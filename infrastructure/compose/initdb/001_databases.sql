@@ -6,3 +6,4 @@ CREATE DATABASE platform_gateway;
 CREATE DATABASE platform_ledger;
 CREATE DATABASE platform_accounts;
 CREATE DATABASE platform_wallet;
+CREATE DATABASE platform_market_data;

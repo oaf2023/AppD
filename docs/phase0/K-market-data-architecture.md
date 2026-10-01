@@ -11,13 +11,14 @@ Proyecto: `MonedasAR` · Dominio: `[DOMAIN]` · Marca: `MonedasAR`
 
 | Elemento | Estado | Detalle |
 |---|---|---|
-| Servicio `services/market-data` (FastAPI, puerto 8084, imagen propia, K8s/compose) | IMPLEMENTADO | `GET /healthz`, `GET /readyz`, `GET /api/v1/market-data/overview`; sin BD/colas/secretos |
+| Servicio `services/market-data` (FastAPI, puerto 8084, imagen propia, K8s/compose) | IMPLEMENTADO | `GET /healthz`, `GET /readyz`, `GET /api/v1/market-data/overview` + `ticks`/`candles`/`status` (BUILD-027); con schema propio `market_data` en PostgreSQL 17 plano (sin colas/secretos) |
 | Contratos DTO (`platform_contracts/market_data.py`: `MarketOverview`, `MarketClassOverview`, `OverviewQuote`) | IMPLEMENTADO | Spec canónico `platform-contracts/openapi/market-data.yaml` + gate de deriva en CI |
-| Protocols de adapters (§1.1 target) | PARCIAL (BUILD-026, 2026-10-01) | **`MarketDataProvider` §1.1 completo** (`get_quote`/`get_tickers`/`get_market_status`/`capabilities`) con tipos canónicos §2 en `domain/models.py` (`Decimal`, invariante `bid≤ask`) y **`MockMarketDataProvider`** determinista + factory `provider_driver=mock` (BUILD-026: `simulated=true`, `source=MOCK`, 22 tests de contrato); el batch informativo de portada ahora es `OverviewProvider`/`ReferenceQuote` (renombrado sin cambio de comportamiento; deuda §91 intacta); quedan `HistoricalDataProvider` y `StreamingProvider` para BUILD-027/029 |
+| Protocols de adapters (§1.1 target) | PARCIAL (BUILD-026, 2026-10-01) | **`MarketDataProvider` §1.1 completo** (`get_quote`/`get_tickers`/`get_market_status`/`capabilities`) con tipos canónicos §2 en `domain/models.py` (`Decimal`, invariante `bid≤ask`) y **`MockMarketDataProvider`** determinista + factory `provider_driver=mock` (BUILD-026: `simulated=true`, `source=MOCK`, 22 tests de contrato); el batch informativo de portada ahora es `OverviewProvider`/`ReferenceQuote` (renombrado sin cambio de comportamiento; deuda §91 intacta); quedan `HistoricalDataProvider` y `StreamingProvider` para BUILD-028/029 |
 | Cache TTL + circuit breaker + failover primario→secundario | IMPLEMENTADO | FX TTL 900 s (referencia diaria BCE), crypto TTL 60 s (límite Kraken 1 req/s); breaker 3 fallos → abierto 30 s → sonda; implementación propia sin dependencias nuevas |
 | Regla no-ficción (K §6.1) | IMPLEMENTADO | Sin fuente → `unavailable` (portada: "dato no disponible"); fuente caída → último snapshot con `stale=true` y `ts` original |
 | Gateway (`PUBLIC_PATHS`, `market_data_url`, `/healthz` agregado) | IMPLEMENTADO | Ruta pública sin JWT; tasa global del gateway aplica |
-| Streaming WS, ticks/velas, symbol master, histórico | PENDIENTE | Fases 2–3 (ver `R-websocket-map.md`, `Q-api-map.md` §2.7) |
+| Ticks/velas persistidos + REST §4.3 (BUILD-027, 2026-10-01) | IMPLEMENTADO | Ingesta desde `MarketDataProvider` → normalización con cuarentena → `market_data.ticks` (dedup) → vela 1m con invariantes H/L y huecos `gap=true` explícitos; endpoints `GET /ticks/{symbol}`, `/ticks` (cursor, rango ≤24 h), `/candles/{symbol}/{timeframe}` y `/status` con auth `read`; agregación multi-timeframe sin implementar (BUILD-030) |
+| Streaming WS, symbol master, histórico de proveedor | PENDIENTE | Fases 2–3 (ver `R-websocket-map.md`, `Q-api-map.md` §2.7; BUILD-028/029) |
 
 ---
 
@@ -100,7 +101,7 @@ Precios siempre como cadena decimal / `Decimal` (nunca `float`, `00-decisions` �
 | **TradingSession** | `symbol`/`asset_class`, `weekday`, `open_utc`, `close_utc`, `timezone` (IANA), `holiday_calendar`, `session_type` (`regular`/`pre`/`post`) | Las sesiones se declaran por zona horaria y se convierten a UTC; feriados por calendario versionado, no hardcodeados en lógica |
 | **MarketStatus** | `symbol`, `status` (`open`/`closed`/`halted`), `reason`, `next_open`, `next_close`, `as_of` | `halted` = suspensión explícita (noticia, breach, mantenimiento); distinto de `closed` (horario) y de `stale` (calidad de feed) |
 
-Almacenamiento (`O-database-strategy`): schema `market_data` en PostgreSQL 17 + TimescaleDB — `symbols`, `instrument_specs`, `ticks` (hypertable), `candles` (hypertable + continuous aggregates `candles_1m`, `candles_1h`), `provider_status`; retención objetivo 2 años (ticks) y 7 años (velas), `DECIDIR` de coste en Fase 3.
+Almacenamiento (`O-database-strategy`): schema `market_data` en PostgreSQL 17 — **BUILD-027 (2026-10-01)** crea `ticks` (dedup `symbol/source/ts/price`, índice `(symbol, ts, id)`) y `candles` (únicas por `(symbol, timeframe, bucket_start)`, CHECK de invariantes H/L y de huecos `gap=true` ⇔ OHLC/volumen NULL) en Postgres plano; pendientes `symbols`, `instrument_specs`, `provider_status`, hypertables/continuous aggregates (`candles_1m`, `candles_1h`) y la retención objetivo 2 años (ticks) / 7 años (velas), con TimescaleDB como `DECIDIR` de coste (M §97, O §201).
 
 ---
 
@@ -167,15 +168,15 @@ Reglas transversales del catálogo:
 
 ### 4.3 REST para histórico y configuración (`Q-api-map` §2.7)
 
-`GET /api/v1/market-data/symbols` · `/ticks/{symbol}` · `/ticks` (rango ≤ 24 h) · `/candles/{symbol}/{timeframe}` (cursor + `from`/`to`) · `/status` · `GET /api/v1/admin/market-data/providers` (F7) · interna `GET /internal/v1/market-data/quote/{symbol}`. Paginación por cursor opaco (`Q` §1.4), sin offset. Rate limit: 300/min por token (`Q` §5).
+`GET /api/v1/market-data/symbols` (BUILD-028) · `/ticks/{symbol}` · `/ticks` (rango ≤ 24 h) · `/candles/{symbol}/{timeframe}` (cursor + `from`/`to`) · `/status` — estos cuatro **implementados en BUILD-027** (2026-10-01: auth `read` vía JWT, cursor opaco §1.4, símbolos con `/` aceptados como tramo de ruta) · `GET /api/v1/admin/market-data/providers` (F7) · interna `GET /internal/v1/market-data/quote/{symbol}`. Paginación por cursor opaco (`Q` §1.4), sin offset. Rate limit: 300/min por token (`Q` §5).
 
 ### 4.4 Secuenciación, huecos, duplicados y reloj
 
 | Tema | Diseño |
 |---|---|
 | **Secuenciación** | `provider_seq` (si el originario lo da) normalizado; en el hub, `seq` monotónico **por topic** (`R` §5). Orden garantizado por partición `symbol` en el bus |
-| **Detección de faltantes** | (a) en el bus: hueco de `provider_seq` ⇒ evento `GapDetected` + job de backfill; (b) en WS: `seq_actual > seq_previo + 1` ⇒ `resync` del cliente (`R` §5.1); (c) en velas: bucket temporal sin ticks ⇒ candle marcado `gap: true`, **nunca** fabricado con el último precio |
-| **Duplicados** | Ventana deslizante por `(symbol, source, provider_seq)`; sin `provider_seq`, ventana temporal ±ε sobre `(ts, price, size)`; consumidores del bus idempotentes por `event_id`/clave de mensaje (`P` §3.3) |
+| **Detección de faltantes** | (a) en el bus: hueco de `provider_seq` ⇒ evento `GapDetected` + job de backfill; (b) en WS: `seq_actual > seq_previo + 1` ⇒ `resync` del cliente (`R` §5.1); (c) en velas: bucket temporal sin ticks ⇒ candle marcado `gap: true`, **nunca** fabricado con el último precio — *implementado en BUILD-027 (`market_data/ingest.py` + CHECK `chk_candle_gap_nulls`)* |
+| **Duplicados** | Ventana deslizante por `(symbol, source, provider_seq)`; sin `provider_seq`, ventana temporal ±ε sobre `(ts, price, size)`; consumidores del bus idempotentes por `event_id`/clave de mensaje (`P` §3.3). *BUILD-027 codifica la dedup como restricción única exacta `(symbol, source, ts, price)` (ε = 0); la ventana deslizante llega con proveedores reales* |
 | **Backfill** | Job por rango hueco: prioriza `HistoricalDataProvider`, respeta rate limit, marca `backfilled: true`, verifica invariantes OHLC y contigüidad antes de publicar; si no hay proveedor histórico → hueco permanece **explícito** con `gap: true` |
 | **Reconciliación** | Cada N minutos se comparan último tick persistido, último del bus y último del hub; divergencia > umbral ⇒ alerta + resync. Diaria: vela agregada desde ticks vs. vela del proveedor (si la hay) ⇒ alerta en desajuste |
 | **Reloj** | UTC como referencia canónica (`platform_kernel.time`); NTP en todos los nodos; `ts` de evento = reloj del productor, `recv_ts` = reloj receptor; skew máximo tolerado **500 ms** (warning) / **2 s** (crítico, marca el dato como no confiable); skew del cliente no se usa nunca; timestamps fuera de banda o en futuro ⇒ descarte + métrica |

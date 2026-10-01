@@ -243,7 +243,7 @@ async def execute_in_tx(session: AsyncSession, fn: Callable):
 | `accounts` | 2 | `PENDIENTE` | `trading_accounts`, `profiles`, `jurisdictions`, `account_limits`, `account_statuses` (ref), `kyc_links` |
 | `wallet` | 2 | `PENDIENTE` | `balances`, `balance_snapshots`, `currency_config`, `conversion_rates` |
 | `ledger` | 2 | `PENDIENTE` | `ledger_accounts`, `ledger_transactions`, `ledger_entries`, `ledger_idempotency_keys`, `ledger_balance_snapshots`, `outbox_events` |
-| `market-data` | 3 | `PENDIENTE` | `symbols`, `ticks` (hypertable), `candles` (hypertable + continuous aggs), `instrument_specs`, `provider_status` |
+| `market-data` | 3 | `IMPLEMENTADO` (parcial BUILD-027: `ticks`, `candles` en Postgres 17 plano; restan `symbols`, `instrument_specs`, `provider_status` + hypertables/retención = DECIDIR) | `symbols`, `ticks`, `candles`, `instrument_specs`, `provider_status` |
 | `trading` | 4 | `PENDIENTE` | `orders`, `positions`, `executions`, `margin_accounts`, `order_legs`, `position_history` |
 | `risk` | 4 | `PENDIENTE` | `limits`, `limit_breaches`, `circuit_breakers`, `kill_switches`, `risk_metrics_snapshots` |
 | `payments` | 6 | `PENDIENTE` | `deposits`, `withdrawals`, `psp_adapters`, `payment_methods`, `psp_webhooks`, `fee_schedules` |

@@ -14,8 +14,14 @@ from typing import Literal
 
 AssetClass = Literal["forex", "crypto"]
 MarketStatusKind = Literal["open", "closed", "halted"]
+TickSide = Literal["buy", "sell", "na"]
+Timeframe = Literal["1m", "5m", "15m", "1h", "4h", "1d"]
 
 PRICE_EXPONENT = Decimal("0.00000001")
+
+#: Q-api-map §2.7 / R-websocket-map §4.1: timeframes canónicos aceptados por la API.
+TIMEFRAMES: tuple[Timeframe, ...] = ("1m", "5m", "15m", "1h", "4h", "1d")
+TICK_SIDES: tuple[TickSide, ...] = ("buy", "sell", "na")
 
 
 class CanonicalDataError(ValueError):
@@ -32,6 +38,14 @@ def _require_price(name: str, value: Decimal) -> None:
 def _require_aware(name: str, value: datetime) -> None:
     if value.utcoffset() is None:
         raise CanonicalDataError(f"{name}: debe ser un timestamp con zona horaria (UTC)")
+
+
+def _require_complete_price(name: str, value: Decimal | None) -> Decimal:
+    """OHLC obligatorio cuando `gap=false`; devuelve el valor estrechado."""
+    if value is None:
+        raise CanonicalDataError(f"{name}: obligatorio cuando gap=false")
+    _require_price(name, value)
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,13 +147,110 @@ class ProviderCapabilities:
             raise CanonicalDataError("granularity: no puede estar vacío")
 
 
+@dataclass(frozen=True, slots=True)
+class Tick:
+    """Tick canónico de mercado (K §2): precio `Decimal`, `size` opcional, UTC con zona.
+
+    `side="na"` cuando el originario no informa dirección; `provider_seq=None`
+    cuando no hay secuencia (deduplicación por ventana temporal, K §4.4).
+    """
+
+    symbol: str
+    price: Decimal
+    side: TickSide
+    size: Decimal | None
+    ts: datetime
+    recv_ts: datetime
+    source: str
+    simulated: bool
+    provider_seq: int | None = None
+
+    def __post_init__(self) -> None:
+        if not self.symbol:
+            raise CanonicalDataError("symbol: no puede estar vacío")
+        if not self.source:
+            raise CanonicalDataError("source: no puede estar vacío")
+        _require_price("price", self.price)
+        if self.side not in TICK_SIDES:
+            raise CanonicalDataError(f"side: valor desconocido {self.side!r}")
+        if self.size is not None:
+            if not isinstance(self.size, Decimal):
+                raise CanonicalDataError(f"size: se exige Decimal (ADR-0006); llegó {type(self.size).__name__}")
+            if self.size < 0:
+                raise CanonicalDataError(f"size: no puede ser negativo; llegó {self.size}")
+        _require_aware("ts", self.ts)
+        _require_aware("recv_ts", self.recv_ts)
+        if self.provider_seq is not None and self.provider_seq < 0:
+            raise CanonicalDataError(f"provider_seq: no puede ser negativo; llegó {self.provider_seq}")
+
+
+@dataclass(frozen=True, slots=True)
+class Candle:
+    """Vela OHLC canónica (K §2, REQ-028): invariantes H/L y huecos explícitos.
+
+    `gap=True` ⇒ OHLC y volumen **todos** `None` (K §4.4(c): un bucket sin ticks
+    se marca como hueco y nunca se fabrica con el último precio). `gap=False` ⇒
+    OHLC completo y `low ≤ min(open, close) ≤ max(open, close) ≤ high`;
+    `volume` es `None` si algún tick del bucket carece de tamaño conocido.
+    """
+
+    symbol: str
+    timeframe: Timeframe
+    ts: datetime
+    open: Decimal | None
+    high: Decimal | None
+    low: Decimal | None
+    close: Decimal | None
+    volume: Decimal | None
+    gap: bool
+    source: str
+    simulated: bool
+
+    def __post_init__(self) -> None:
+        if not self.symbol:
+            raise CanonicalDataError("symbol: no puede estar vacío")
+        if not self.source:
+            raise CanonicalDataError("source: no puede estar vacío")
+        if self.timeframe not in TIMEFRAMES:
+            raise CanonicalDataError(f"timeframe: valor desconocido {self.timeframe!r}")
+        _require_aware("ts", self.ts)
+        if self.gap:
+            for name in ("open", "high", "low", "close", "volume"):
+                if getattr(self, name) is not None:
+                    raise CanonicalDataError(f"gap=true exige {name}=null (K §4.4(c): nunca fabricado)")
+            return
+        open_v = _require_complete_price("open", self.open)
+        high_v = _require_complete_price("high", self.high)
+        low_v = _require_complete_price("low", self.low)
+        close_v = _require_complete_price("close", self.close)
+        if low_v > min(open_v, close_v):
+            raise CanonicalDataError(
+                f"low <= min(open, close) obligatorio (REQ-028); llegó low={low_v} open={open_v} close={close_v}"
+            )
+        if high_v < max(open_v, close_v):
+            raise CanonicalDataError(
+                f"high >= max(open, close) obligatorio (REQ-028); llegó high={high_v} open={open_v} close={close_v}"
+            )
+        if self.volume is not None:
+            if not isinstance(self.volume, Decimal):
+                raise CanonicalDataError("volume: se exige Decimal (ADR-0006)")
+            if self.volume < 0:
+                raise CanonicalDataError(f"volume: no puede ser negativo; llegó {self.volume}")
+
+
 __all__ = [
     "PRICE_EXPONENT",
+    "TICK_SIDES",
+    "TIMEFRAMES",
     "AssetClass",
+    "Candle",
     "CanonicalDataError",
     "MarketStatus",
     "MarketStatusKind",
     "ProviderCapabilities",
     "Quote",
+    "Tick",
+    "TickSide",
     "Ticker",
+    "Timeframe",
 ]

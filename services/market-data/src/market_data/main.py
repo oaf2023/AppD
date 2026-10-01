@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -16,6 +17,9 @@ from platform_kernel.middleware import RequestContextMiddleware
 from platform_kernel.telemetry import init_telemetry, instrument_app
 
 from market_data.config import MarketDataSettings, get_market_data_settings
+from market_data.db import get_engine, get_session_factory, reset_engine
+from market_data.ingest import IngestPoller, IngestService
+from market_data.providers.factory import create_market_data_provider
 from market_data.routes import router
 from market_data.service import MarketDataService, default_providers
 
@@ -26,6 +30,7 @@ def create_app(
     *,
     transport: httpx.AsyncBaseTransport | None = None,
     settings: MarketDataSettings | None = None,
+    auto_migrate: bool | None = None,
 ) -> FastAPI:
     cfg = get_market_data_settings() if settings is None else settings
     setup_logging(cfg.service_name, cfg.log_level)
@@ -33,11 +38,33 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        do_migrate = cfg.environment in ("local", "test") if auto_migrate is None else auto_migrate
+        if do_migrate:
+            from market_data.migrate import run_migrations
+
+            await asyncio.to_thread(run_migrations, cfg.market_data_database_url)
         client = httpx.AsyncClient(timeout=cfg.http_timeout_seconds, transport=transport)
+        app.state.settings = cfg
         app.state.service = MarketDataService(cfg, client, providers=default_providers(cfg))
-        logger.info("market-data listo", extra={"extra_fields": {"environment": cfg.environment}})
+        provider = create_market_data_provider(cfg)
+        app.state.market_data_provider = provider
+        poller: IngestPoller | None = None
+        if cfg.ingest_enabled:
+            service = IngestService(get_session_factory(), provider)
+            poller = IngestPoller(service, cfg)
+            await poller.start()
+        app.state.ingest_poller = poller
+        logger.info(
+            "market-data listo",
+            extra={"extra_fields": {"environment": cfg.environment, "ingest_enabled": cfg.ingest_enabled}},
+        )
         yield
+        if poller is not None:
+            await poller.stop()
         await client.aclose()
+        engine = get_engine()
+        await engine.dispose()
+        reset_engine()
 
     app = FastAPI(
         title="MonedasAR Market Data Service",

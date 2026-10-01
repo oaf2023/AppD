@@ -71,7 +71,7 @@ jobs:
       - name: Crear bases por servicio
         run: |
           export PGPASSWORD=platform_local_dev_only
-          for db in platform_identity platform_audit platform_gateway platform_ledger platform_accounts platform_wallet; do
+          for db in platform_identity platform_audit platform_gateway platform_ledger platform_accounts platform_wallet platform_market_data; do
             psql -h localhost -p 5433 -U platform -d platform -c "CREATE DATABASE ${db};"
           done
       - name: Levantar Redpanda

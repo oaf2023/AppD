@@ -29,6 +29,7 @@ os.environ.update(
         "LEDGER_DATABASE_URL": "postgresql+psycopg://platform:platform_local_dev_only@127.0.0.1:5433/platform_ledger",
         "ACCOUNTS_DATABASE_URL": "postgresql+psycopg://platform:platform_local_dev_only@127.0.0.1:5433/platform_accounts",
         "WALLET_DATABASE_URL": "postgresql+psycopg://platform:platform_local_dev_only@127.0.0.1:5433/platform_wallet",
+        "MARKET_DATA_DATABASE_URL": "postgresql+psycopg://platform:platform_local_dev_only@127.0.0.1:5433/platform_market_data",
         "IDENTITY_URL": "http://127.0.0.1:18081",
         "AUDIT_URL": "http://127.0.0.1:18083",
         "MARKET_DATA_URL": "http://127.0.0.1:18084",

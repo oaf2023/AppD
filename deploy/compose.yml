@@ -157,15 +157,27 @@ services:
       dockerfile: services/market-data/Dockerfile
     image: platform/market-data:omv
     restart: unless-stopped
+    command:
+      - sh
+      - -c
+      - |
+        python -c "import os; from market_data.migrate import run_migrations; run_migrations(os.environ['MARKET_DATA_DATABASE_URL'])"
+        exec uvicorn market_data.main:app --host 0.0.0.0 --port 8084
     environment:
       ENVIRONMENT: production
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       JWT_SECRET: ${JWT_SECRET}
       SERVICE_TOKEN_SECRET: ${SERVICE_TOKEN_SECRET}
+      MARKET_DATA_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/platform_market_data
+      INGEST_ENABLED: "true"
+      INGEST_INTERVAL_SECONDS: ${INGEST_INTERVAL_SECONDS:-5}
       CORS_ORIGINS: ${CORS_ORIGINS}
       OTEL_ENDPOINT: ${OTEL_ENDPOINT:-}
     ports:
       - "40004:8084"
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8084/healthz', timeout=3)"]
       interval: 15s

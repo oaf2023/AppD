@@ -252,10 +252,10 @@ Convención de columna **Idem**: `Sí` = efecto único garantizado con `Idempote
 |---|---|---|---|---|---|
 | GET | `/api/v1/market-data/overview` | Snapshot público de Forex/Crypto de referencia (proveedores keyless; `source` + `ts` + `stale`, jamás precio inventado) | **Pública** | N/A | **1** (2026-09-28) |
 | GET | `/api/v1/market-data/symbols` | Símbolos disponibles con sesión de mercado y estado del feed | Pública (o `read`) | N/A | 3 |
-| GET | `/api/v1/market-data/ticks/{symbol}` | Último tick (snapshot) | `read` | N/A | 3 |
-| GET | `/api/v1/market-data/ticks` | Histórico de ticks (cursor, rango ≤ 24 h) | `read` | N/A | 3 |
-| GET | `/api/v1/market-data/candles/{symbol}/{timeframe}` | Velas OHLC (cursor, `from/to`) | `read` | N/A | 3 |
-| GET | `/api/v1/market-data/status` | Estado del feed: `simulated/real`, latencia, huecos detectados | `read` | N/A | 3 |
+| GET | `/api/v1/market-data/ticks/{symbol}` | Último tick (snapshot) | `read` | N/A | **3** (2026-10-01) |
+| GET | `/api/v1/market-data/ticks` | Histórico de ticks (cursor, rango ≤ 24 h) | `read` | N/A | **3** (2026-10-01) |
+| GET | `/api/v1/market-data/candles/{symbol}/{timeframe}` | Velas OHLC (cursor, `from/to`) | `read` | N/A | **3** (2026-10-01) |
+| GET | `/api/v1/market-data/status` | Estado del feed: `simulated/real`, latencia, huecos detectados | `read` | N/A | **3** (2026-10-01) |
 | GET | `/api/v1/admin/market-data/providers` | Estado de adapters de proveedores | `admin` | N/A | 7 |
 
 > El `overview` (Fase 1) sirve datos **reales** de APIs públicas keyless con `simulated: false` (BCE/Frankfurter, Kraken; ver `docs/API_INTEGRATIONS.md`), solo para consulta informativa en la portada. Todo dato de mercado de Fases 3–5 (trading/mark-to-market) sigue siendo **simulado** y va etiquetado (`simulated: true`); ver 00-decisions §6 y X-07.

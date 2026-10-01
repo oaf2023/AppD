@@ -59,7 +59,7 @@ Regla: todo lo aquí listado es implementable con código propio + open-source +
 | ID | Funcionalidad | Por qué es construible ya | Entregable esperado | Fase |
 |---|---|---|---|---|
 | BUILD-026 | Contrato `MarketDataProvider` + mock determinista (seed) etiquetado `simulated` | Generador propio, sin feed real | → `IMPLEMENTADO`: contrato K §1.1 en `market_data/domain/{models,protocols}.py` (`Decimal`, `bid≤ask`) + `MockMarketDataProvider` (SHA-256 seed, `source=MOCK`, `simulated=true`) + factory `provider_driver=mock`; 22 tests de contrato (2026-10-01) | 3 |
-| BUILD-027 | Normalización + persistencia ticks/OHLC con huecos explícitos | Solo pipeline propio | OHLC con invariantes H/L verificadas | 3 |
+| BUILD-027 | Normalización + persistencia ticks/OHLC con huecos explícitos | Solo pipeline propio | → `IMPLEMENTADO`: schema `market_data` con `ticks` (dedup `symbol/source/ts/price`) y `candles` (CHECK invariantes REQ-028 + huecos `gap=true` con OHLC/volumen NULL, K §4.4(c)); normalizador con cuarentena (jamás corrige el dato), agregador 1m in-process, poller `ingest_enabled` (apagado por defecto), REST Q §2.7 (`ticks`/`candles`/`status` con JWT `read`, cursor §1.4, rango ≤24 h); 19 tests (2026-10-01); multi-timeframe → BUILD-030 | 3 |
 | BUILD-028 | Catálogo de símbolos versionado + horarios/suspensiones | Tablas propias | Orden fuera de spec → rechazo tipado | 3 |
 | BUILD-029 | WS interno: subscribe, sequence/heartbeat, snapshot+delta resync | WS propio (FastAPI/websockets) | Reconexión sin saltos verificada | 3 |
 | BUILD-030 | Agregador tick→vela multi-timeframe + casos dorados | Algoritmo propio | Velas idénticas ante replay | 3 |

@@ -21,6 +21,8 @@ RUN useradd --system --uid 10001 --create-home appuser
 
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
+COPY services/market-data/alembic.ini /app/alembic.ini
+COPY services/market-data/migrations /app/migrations
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \

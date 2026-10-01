@@ -37,6 +37,16 @@ class MarketDataSettings(KernelSettings):
     provider_driver: Literal["mock"] = "mock"
     mock_provider_seed: int = 42
 
+    # Persistencia de mercado (K §4.4, BUILD-027): schema `market_data` dedicado
+    # (O-database-strategy §2); Postgres 17 plano, TimescaleDB/retención = DECIDIR.
+    market_data_database_url: str = (
+        "postgresql+psycopg://platform:platform_local_dev_only@127.0.0.1:5433/platform_market_data"
+    )
+    # Ingesta desde el driver canónico: apagada por defecto (determinismo de
+    # tests y arranques mínimos); el deploy local/OMV la activa explícitamente.
+    ingest_enabled: bool = False
+    ingest_interval_seconds: float = 5.0
+
 
 @lru_cache(maxsize=1)
 def get_market_data_settings() -> MarketDataSettings:

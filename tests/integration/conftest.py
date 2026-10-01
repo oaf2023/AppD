@@ -178,3 +178,38 @@ async def wallet_client(wallet_app):  # type: ignore[no-untyped-def]
     transport = httpx.ASGITransport(app=wallet_app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=30.0) as client:
         yield client
+
+
+@pytest.fixture
+async def market_data_app(clean_dbs: None):  # type: ignore[no-untyped-def]
+    """Market-data con lifespan real: migraciones sobre `platform_market_data`.
+
+    El poller de ingest queda apagado (`INGEST_ENABLED` sin fijar ⇒ false en
+    helpers); los tests llaman a `IngestService.ingest_raw` de forma explícita
+    para controlar reloj y datos (lección BUILD-021: nada de estado compartido
+    que dependa de tiempo real).
+    """
+    from market_data.config import get_market_data_settings
+    from market_data.db import reset_engine
+
+    get_market_data_settings.cache_clear()
+    reset_engine()
+
+    from market_data.main import create_app
+
+    try:
+        app = create_app()
+        async with app.router.lifespan_context(app):
+            yield app
+    finally:
+        get_market_data_settings.cache_clear()
+        reset_engine()
+
+
+@pytest.fixture
+async def market_data_client(market_data_app):  # type: ignore[no-untyped-def]
+    import httpx
+
+    transport = httpx.ASGITransport(app=market_data_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=30.0) as client:
+        yield client
