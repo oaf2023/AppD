@@ -17,7 +17,7 @@ import httpx
 from platform_contracts.market_data import MarketClassOverview, MarketOverview, OverviewQuote
 
 from market_data.config import MarketDataSettings
-from market_data.domain.protocols import AssetClass, MarketDataProvider, ProviderError, Quote
+from market_data.domain.protocols import AssetClass, OverviewProvider, ProviderError, ReferenceQuote
 from market_data.infrastructure.breaker import CircuitBreaker
 from market_data.providers import CoinGeckoProvider, EcbProvider, FrankfurterProvider, KrakenProvider
 
@@ -26,7 +26,7 @@ logger = logging.getLogger("market_data.service")
 _TTL_BY_CLASS: dict[AssetClass, str] = {"forex": "fx_cache_ttl_seconds", "crypto": "crypto_cache_ttl_seconds"}
 
 
-def default_providers(settings: MarketDataSettings) -> list[MarketDataProvider]:
+def default_providers(settings: MarketDataSettings) -> list[OverviewProvider]:
     """Orden de failover: FX = Frankfurter → ECB directo; Crypto = Kraken → CoinGecko."""
     return [
         FrankfurterProvider(settings.frankfurter_base_url),
@@ -38,7 +38,7 @@ def default_providers(settings: MarketDataSettings) -> list[MarketDataProvider]:
 
 @dataclass(frozen=True, slots=True)
 class _Snapshot:
-    quotes: dict[str, Quote]
+    quotes: dict[str, ReferenceQuote]
     fetched_at: datetime
     provider_id: str
     source: str
@@ -49,7 +49,7 @@ class _Snapshot:
 class _Plan:
     asset_class: AssetClass
     ttl_seconds: int
-    providers: tuple[MarketDataProvider, ...]
+    providers: tuple[OverviewProvider, ...]
 
 
 class MarketDataService:
@@ -58,7 +58,7 @@ class MarketDataService:
         settings: MarketDataSettings,
         client: httpx.AsyncClient,
         *,
-        providers: list[MarketDataProvider] | None = None,
+        providers: list[OverviewProvider] | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._settings = settings
@@ -67,7 +67,7 @@ class MarketDataService:
         self._snapshots: dict[AssetClass, _Snapshot] = {}
 
         selected = providers if providers is not None else default_providers(settings)
-        grouped: dict[AssetClass, list[MarketDataProvider]] = {"forex": [], "crypto": []}
+        grouped: dict[AssetClass, list[OverviewProvider]] = {"forex": [], "crypto": []}
         for provider in selected:
             grouped[provider.asset_class].append(provider)
         self._plans: dict[AssetClass, _Plan] = {

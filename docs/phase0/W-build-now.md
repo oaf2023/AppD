@@ -58,7 +58,7 @@ Regla: todo lo aquí listado es implementable con código propio + open-source +
 
 | ID | Funcionalidad | Por qué es construible ya | Entregable esperado | Fase |
 |---|---|---|---|---|
-| BUILD-026 | Contrato `MarketDataProvider` + mock determinista (seed) etiquetado `simulated` | Generador propio, sin feed real | Mock sustituble sin tocar núcleo | 3 |
+| BUILD-026 | Contrato `MarketDataProvider` + mock determinista (seed) etiquetado `simulated` | Generador propio, sin feed real | → `IMPLEMENTADO`: contrato K §1.1 en `market_data/domain/{models,protocols}.py` (`Decimal`, `bid≤ask`) + `MockMarketDataProvider` (SHA-256 seed, `source=MOCK`, `simulated=true`) + factory `provider_driver=mock`; 22 tests de contrato (2026-10-01) | 3 |
 | BUILD-027 | Normalización + persistencia ticks/OHLC con huecos explícitos | Solo pipeline propio | OHLC con invariantes H/L verificadas | 3 |
 | BUILD-028 | Catálogo de símbolos versionado + horarios/suspensiones | Tablas propias | Orden fuera de spec → rechazo tipado | 3 |
 | BUILD-029 | WS interno: subscribe, sequence/heartbeat, snapshot+delta resync | WS propio (FastAPI/websockets) | Reconexión sin saltos verificada | 3 |

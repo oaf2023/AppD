@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 import httpx
 
 from market_data.domain.instruments import COINGECKO_IDS
-from market_data.domain.protocols import AssetClass, ProviderError, Quote
+from market_data.domain.protocols import AssetClass, ProviderError, ReferenceQuote
 from market_data.domain.values import positive_float
 
 
@@ -23,7 +23,7 @@ class CoinGeckoProvider:
     def __init__(self, base_url: str) -> None:
         self._base = base_url.rstrip("/")
 
-    async def fetch_quotes(self, client: httpx.AsyncClient) -> dict[str, Quote]:
+    async def fetch_quotes(self, client: httpx.AsyncClient) -> dict[str, ReferenceQuote]:
         response = await client.get(
             f"{self._base}/simple/price",
             params={"ids": ",".join(COINGECKO_IDS), "vs_currencies": "usd"},
@@ -34,13 +34,13 @@ class CoinGeckoProvider:
             raise ProviderError(f"coingecko: payload inesperado ({type(payload).__name__})")
 
         now = datetime.now(UTC)
-        quotes: dict[str, Quote] = {}
+        quotes: dict[str, ReferenceQuote] = {}
         for coin_id, symbol in COINGECKO_IDS.items():
             entry = payload.get(coin_id)
             value = positive_float(entry.get("usd")) if isinstance(entry, dict) else None
             if value is None:
                 continue
-            quotes[symbol] = Quote(symbol=symbol, value=value, ts=now)
+            quotes[symbol] = ReferenceQuote(symbol=symbol, value=value, ts=now)
         if not quotes:
             raise ProviderError("coingecko: sin cotizaciones utilizables")
         return quotes

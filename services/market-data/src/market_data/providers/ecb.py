@@ -13,7 +13,7 @@ from urllib.parse import quote
 import httpx
 
 from market_data.domain.instruments import FOREX_CODES
-from market_data.domain.protocols import AssetClass, ProviderError, Quote
+from market_data.domain.protocols import AssetClass, ProviderError, ReferenceQuote
 from market_data.domain.values import positive_float
 
 
@@ -26,7 +26,7 @@ class EcbProvider:
     def __init__(self, base_url: str) -> None:
         self._base = base_url.rstrip("/")
 
-    async def fetch_quotes(self, client: httpx.AsyncClient) -> dict[str, Quote]:
+    async def fetch_quotes(self, client: httpx.AsyncClient) -> dict[str, ReferenceQuote]:
         codes = quote("+".join(FOREX_CODES), safe="")
         response = await client.get(
             f"{self._base}/EXR/D.{codes}.EUR.SP00.A",
@@ -35,7 +35,7 @@ class EcbProvider:
         response.raise_for_status()
         return self._parse(response.json())
 
-    def _parse(self, payload: object) -> dict[str, Quote]:
+    def _parse(self, payload: object) -> dict[str, ReferenceQuote]:
         try:
             assert isinstance(payload, dict)
             structure = payload["structure"]
@@ -53,7 +53,7 @@ class EcbProvider:
         except (AssertionError, KeyError, IndexError, StopIteration, TypeError) as exc:
             raise ProviderError(f"ecb: payload con forma inesperada ({exc!r})") from exc
 
-        quotes: dict[str, Quote] = {}
+        quotes: dict[str, ReferenceQuote] = {}
         for key, entry in series.items():
             parts = str(key).split(":")
             if len(parts) <= currency_idx:
@@ -79,7 +79,7 @@ class EcbProvider:
             except ValueError:
                 continue
             symbol = f"EUR/{code}"
-            quotes[symbol] = Quote(symbol=symbol, value=value, ts=ts)
+            quotes[symbol] = ReferenceQuote(symbol=symbol, value=value, ts=ts)
         if not quotes:
             raise ProviderError("ecb: sin cotizaciones utilizables")
         return quotes

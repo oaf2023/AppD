@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 import httpx
 
 from market_data.domain.instruments import CRYPTO_PAIRS, KRAKEN_KEYS
-from market_data.domain.protocols import AssetClass, ProviderError, Quote
+from market_data.domain.protocols import AssetClass, ProviderError, ReferenceQuote
 from market_data.domain.values import positive_float
 
 
@@ -25,7 +25,7 @@ class KrakenProvider:
     def __init__(self, base_url: str) -> None:
         self._base = base_url.rstrip("/")
 
-    async def fetch_quotes(self, client: httpx.AsyncClient) -> dict[str, Quote]:
+    async def fetch_quotes(self, client: httpx.AsyncClient) -> dict[str, ReferenceQuote]:
         response = await client.get(
             f"{self._base}/0/public/Ticker",
             params={"pair": ",".join(CRYPTO_PAIRS)},
@@ -42,7 +42,7 @@ class KrakenProvider:
             raise ProviderError("kraken: sin campo result")
 
         now = datetime.now(UTC)
-        quotes: dict[str, Quote] = {}
+        quotes: dict[str, ReferenceQuote] = {}
         for pair, symbol in CRYPTO_PAIRS.items():
             entry = next((result[key] for key in KRAKEN_KEYS[pair] if key in result), None)
             if not isinstance(entry, dict):
@@ -51,7 +51,7 @@ class KrakenProvider:
             value = positive_float(last[0]) if isinstance(last, list) and last else None
             if value is None:
                 continue
-            quotes[symbol] = Quote(symbol=symbol, value=value, ts=now)
+            quotes[symbol] = ReferenceQuote(symbol=symbol, value=value, ts=now)
         if not quotes:
             raise ProviderError("kraken: sin cotizaciones utilizables")
         return quotes

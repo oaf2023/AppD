@@ -13,7 +13,7 @@ Proyecto: `MonedasAR` · Dominio: `[DOMAIN]` · Marca: `MonedasAR`
 |---|---|---|
 | Servicio `services/market-data` (FastAPI, puerto 8084, imagen propia, K8s/compose) | IMPLEMENTADO | `GET /healthz`, `GET /readyz`, `GET /api/v1/market-data/overview`; sin BD/colas/secretos |
 | Contratos DTO (`platform_contracts/market_data.py`: `MarketOverview`, `MarketClassOverview`, `OverviewQuote`) | IMPLEMENTADO | Spec canónico `platform-contracts/openapi/market-data.yaml` + gate de deriva en CI |
-| Protocols de adapters (§1.1 target) | PARCIAL | Hoy existe `MarketDataProvider.fetch_quotes()` (batch por clase de activo) en `market_data/domain/protocols.py`; `get_quote`/`get_tickers`/`get_market_status`, `HistoricalDataProvider` y `StreamingProvider` quedan para Fases 2–3 |
+| Protocols de adapters (§1.1 target) | PARCIAL (BUILD-026, 2026-10-01) | **`MarketDataProvider` §1.1 completo** (`get_quote`/`get_tickers`/`get_market_status`/`capabilities`) con tipos canónicos §2 en `domain/models.py` (`Decimal`, invariante `bid≤ask`) y **`MockMarketDataProvider`** determinista + factory `provider_driver=mock` (BUILD-026: `simulated=true`, `source=MOCK`, 22 tests de contrato); el batch informativo de portada ahora es `OverviewProvider`/`ReferenceQuote` (renombrado sin cambio de comportamiento; deuda §91 intacta); quedan `HistoricalDataProvider` y `StreamingProvider` para BUILD-027/029 |
 | Cache TTL + circuit breaker + failover primario→secundario | IMPLEMENTADO | FX TTL 900 s (referencia diaria BCE), crypto TTL 60 s (límite Kraken 1 req/s); breaker 3 fallos → abierto 30 s → sonda; implementación propia sin dependencias nuevas |
 | Regla no-ficción (K §6.1) | IMPLEMENTADO | Sin fuente → `unavailable` (portada: "dato no disponible"); fuente caída → último snapshot con `stale=true` y `ts` original |
 | Gateway (`PUBLIC_PATHS`, `market_data_url`, `/healthz` agregado) | IMPLEMENTADO | Ruta pública sin JWT; tasa global del gateway aplica |
@@ -80,7 +80,7 @@ class SyntheticDataProvider(Protocol):
 
 | Implementación | Propósito | Estado |
 |---|---|---|
-| `MockMarketDataProvider` / `MockHistoricalDataProvider` | Determinista (seed), etiquetado `simulated: true` y `source: MOCK` | `MOCK` (estructura Fase 1, servicio Fase 3) |
+| `MockMarketDataProvider` / `MockHistoricalDataProvider` | Determinista (seed), etiquetado `simulated: true` y `source: MOCK` | `MockMarketDataProvider` **IMPLEMENTADO 2026-10-01** (BUILD-026: sin red, universo provisional de 4 símbolos, serie golden); `MockHistoricalDataProvider` PENDIENTE (BUILD-027) |
 | `SyntheticMarketEngineAdapter` | Expone el motor interno (§5) bajo `SyntheticDataProvider` | `PENDIENTE` (Fase 5, `BUILD-046`) |
 | `<ProveedorA>Adapter`, `<ProveedorB>Adapter` | Feeds externos reales | `REQUIERE PROVEEDOR` — **no se nombran ni simulan proveedores concretos** |
 

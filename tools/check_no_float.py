@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # (K-market-data §91: precios deben migrar a Decimal; ADR-0006). Se revisa al
 # retomar market-data; mientras tanto el gate no puede fallar por esto.
 KNOWN_EXCEPTIONS: dict[str, str] = {
-    "services/market-data/src/market_data/domain/protocols.py": "Quote.value en float (K §91 pendiente)",
+    "services/market-data/src/market_data/domain/protocols.py": "ReferenceQuote.value en float (K §91 pendiente)",
     "services/market-data/src/market_data/domain/values.py": "positive_float() de proveedores (K §91 pendiente)",
     "packages/platform-contracts/src/platform_contracts/market_data.py": "OverviewQuote.value en float (K §91)",
 }

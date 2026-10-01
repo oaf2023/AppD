@@ -6,6 +6,7 @@ Sin secretos: todos los proveedores son keyless (docs/API_INTEGRATIONS.md).
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from platform_kernel.config import KernelSettings
 from pydantic_settings import SettingsConfigDict
@@ -30,6 +31,11 @@ class MarketDataSettings(KernelSettings):
 
     breaker_failure_threshold: int = 3
     breaker_cooldown_seconds: float = 30.0
+
+    # Driver del contrato canónico (K §1.1, BUILD-026): por defecto el mock
+    # determinista etiquetado simulated; drivers reales solo con gate X-07.
+    provider_driver: Literal["mock"] = "mock"
+    mock_provider_seed: int = 42
 
 
 @lru_cache(maxsize=1)

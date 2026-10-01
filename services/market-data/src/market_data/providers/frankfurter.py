@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 import httpx
 
 from market_data.domain.instruments import FOREX_CODES
-from market_data.domain.protocols import AssetClass, ProviderError, Quote
+from market_data.domain.protocols import AssetClass, ProviderError, ReferenceQuote
 from market_data.domain.values import positive_float
 
 
@@ -24,7 +24,7 @@ class FrankfurterProvider:
     def __init__(self, base_url: str) -> None:
         self._base = base_url.rstrip("/")
 
-    async def fetch_quotes(self, client: httpx.AsyncClient) -> dict[str, Quote]:
+    async def fetch_quotes(self, client: httpx.AsyncClient) -> dict[str, ReferenceQuote]:
         response = await client.get(
             f"{self._base}/rates",
             params={"base": "EUR", "quotes": ",".join(FOREX_CODES), "providers": "ecb"},
@@ -33,7 +33,7 @@ class FrankfurterProvider:
         payload = response.json()
         if not isinstance(payload, list):
             raise ProviderError(f"frankfurter: payload inesperado ({type(payload).__name__})")
-        quotes: dict[str, Quote] = {}
+        quotes: dict[str, ReferenceQuote] = {}
         for row in payload:
             if not isinstance(row, dict):
                 continue
@@ -47,7 +47,7 @@ class FrankfurterProvider:
             except ValueError:
                 continue
             symbol = f"EUR/{code}"
-            quotes[symbol] = Quote(symbol=symbol, value=rate, ts=ts)
+            quotes[symbol] = ReferenceQuote(symbol=symbol, value=rate, ts=ts)
         if not quotes:
             raise ProviderError("frankfurter: sin cotizaciones utilizables")
         return quotes
