@@ -1,11 +1,16 @@
-"""store — consultas y agregación tick→vela del pipeline propio (K §4.4, BUILD-027).
+"""store — consultas y agregación tick→vela del pipeline propio (K §4.4, BUILD-027/030).
 
-Agregación 1m en proceso (BUILD-030 extiende a multi-timeframe sobre el bus):
-open/close = primer/último tick del bucket por `(ts, id)`; high/low = extremos
-del precio; `volume` = suma de tamaños **solo si todos los ticks del bucket lo
-informan**, si no `NULL` (jamás se fabrica dato). La vela existente se
-recalcula desde los ticks (`gap=false`); los buckets cerrados sin ticks se
-insertan como hueco (`gap=true`, OHLC/volumen `NULL` — K §4.4(c)).
+Agregación multi-timeframe en proceso (`1m`, `5m`, `15m`, `1h`, `4h`, `1d` —
+BUILD-030): open/close = primer/último tick del bucket por `(ts, id)`;
+high/low = extremos del precio; `volume` = suma de tamaños **solo si todos los
+ticks del bucket lo informan**, si no `NULL` (jamás se fabrica dato). La vela
+existente se recalcula desde los ticks (`gap=false`); los buckets cerrados sin
+ticks se insertan como hueco (`gap=true`, OHLC/volumen `NULL` — K §4.4(c)).
+Cada timeframe es una función pura de los ticks ⇒ replay idéntico
+(`tests/integration/test_market_data_candles_multi_tf.py`, BUILD-030).
+
+Buckets alineados a UTC: `5m`/`15m` al múltiplo, `1h` a la hora, `4h` a
+00/04/08/12/16/20 y `1d` a medianoche UTC (día calendario, sin sesión).
 """
 
 from __future__ import annotations
@@ -26,9 +31,39 @@ from market_data.tables import CandleRow, TickRow
 
 TIMEDELTA_1M = timedelta(minutes=1)
 
+#: Duración de cada bucket; la alineación es a UTC (ver `bucket_start`).
+TIMEFRAME_DELTAS: dict[Timeframe, timedelta] = {
+    "1m": timedelta(minutes=1),
+    "5m": timedelta(minutes=5),
+    "15m": timedelta(minutes=15),
+    "1h": timedelta(hours=1),
+    "4h": timedelta(hours=4),
+    "1d": timedelta(days=1),
+}
+
+
+def bucket_start(ts: datetime, timeframe: Timeframe) -> datetime:
+    """Inicio UTC del bucket de `ts` para `timeframe` (BUILD-030).
+
+    Reglas: `1m`→minuto; `5m`/`15m`→múltiplo; `1h`→hora; `4h`→00/04/08/12/16/20;
+    `1d`→medianoche UTC (día calendario, sin sesión). Con `ts` naive se comporta
+    igual: las capas superiores exigen zona horaria.
+    """
+    if timeframe == "1m":
+        return ts.replace(second=0, microsecond=0)
+    if timeframe == "5m":
+        return ts.replace(minute=(ts.minute // 5) * 5, second=0, microsecond=0)
+    if timeframe == "15m":
+        return ts.replace(minute=(ts.minute // 15) * 15, second=0, microsecond=0)
+    if timeframe == "1h":
+        return ts.replace(minute=0, second=0, microsecond=0)
+    if timeframe == "4h":
+        return ts.replace(hour=(ts.hour // 4) * 4, minute=0, second=0, microsecond=0)
+    return ts.replace(hour=0, minute=0, second=0, microsecond=0)  # 1d
+
 
 def bucket_start_1m(ts: datetime) -> datetime:
-    return ts.replace(second=0, microsecond=0)
+    return bucket_start(ts, "1m")
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,18 +116,25 @@ async def _ticks_in_window(session: AsyncSession, symbol: str, start: datetime, 
     return list((await session.execute(stmt)).scalars())
 
 
-async def recompute_candles_1m(session: AsyncSession, symbol: str, buckets: Sequence[datetime]) -> list[datetime]:
-    """Recalcula las velas 1m de `buckets` desde los ticks (upsert `gap=false`).
+async def recompute_candles(
+    session: AsyncSession,
+    symbol: str,
+    timeframe: Timeframe,
+    buckets: Sequence[datetime],
+) -> list[datetime]:
+    """Recalcula las velas de `timeframe` en `buckets` desde los ticks (upsert `gap=false`).
 
+    Función pura del conjunto de ticks ⇒ replay idéntico (BUILD-030).
     Devuelve los buckets que efectivamente tienen ticks (=> vela real).
     """
     if not buckets:
         return []
-    start, end = min(buckets), max(buckets) + TIMEDELTA_1M
+    delta = TIMEFRAME_DELTAS[timeframe]
+    start, end = min(buckets), max(buckets) + delta
     ticks = await _ticks_in_window(session, symbol, start, end)
     by_bucket: dict[datetime, list[TickRow]] = {}
     for row in ticks:
-        by_bucket.setdefault(bucket_start_1m(row.ts), []).append(row)
+        by_bucket.setdefault(bucket_start(row.ts, timeframe), []).append(row)
     real: list[datetime] = []
     for bucket in sorted(set(buckets) & set(by_bucket)):
         group = by_bucket[bucket]
@@ -103,7 +145,7 @@ async def recompute_candles_1m(session: AsyncSession, symbol: str, buckets: Sequ
             pg_insert(CandleRow)
             .values(
                 symbol=symbol,
-                timeframe="1m",
+                timeframe=timeframe,
                 bucket_start=bucket,
                 open=group[0].price,
                 high=max(prices),
@@ -134,6 +176,11 @@ async def recompute_candles_1m(session: AsyncSession, symbol: str, buckets: Sequ
     return real
 
 
+async def recompute_candles_1m(session: AsyncSession, symbol: str, buckets: Sequence[datetime]) -> list[datetime]:
+    """Compat: `recompute_candles(..., "1m", ...)`."""
+    return await recompute_candles(session, symbol, "1m", buckets)
+
+
 async def mark_gap_candles(
     session: AsyncSession,
     symbol: str,
@@ -141,12 +188,14 @@ async def mark_gap_candles(
     *,
     source: str,
     simulated: bool,
+    timeframe: Timeframe = "1m",
 ) -> int:
     """Inserta `gap=true` en buckets cerrados sin ticks; nunca sobreescribe velas reales."""
     if not buckets:
         return 0
-    start, end = min(buckets), max(buckets) + TIMEDELTA_1M
-    with_ticks = {bucket_start_1m(row.ts) for row in await _ticks_in_window(session, symbol, start, end)}
+    delta = TIMEFRAME_DELTAS[timeframe]
+    start, end = min(buckets), max(buckets) + delta
+    with_ticks = {bucket_start(row.ts, timeframe) for row in await _ticks_in_window(session, symbol, start, end)}
     candidates = [bucket for bucket in sorted(set(buckets)) if bucket not in with_ticks]
     if not candidates:
         return 0
@@ -156,7 +205,7 @@ async def mark_gap_candles(
             [
                 {
                     "symbol": symbol,
-                    "timeframe": "1m",
+                    "timeframe": timeframe,
                     "bucket_start": bucket,
                     "open": None,
                     "high": None,
@@ -178,7 +227,11 @@ async def mark_gap_candles(
     return len(list((await session.execute(stmt)).scalars()))
 
 
-def gap_candidates_between(lower_bucket: datetime, max_bucket: datetime) -> list[datetime]:
+def gap_candidates_between(
+    lower_bucket: datetime,
+    max_bucket: datetime,
+    timeframe: Timeframe = "1m",
+) -> list[datetime]:
     """Buckets estrictamente entre `lower_bucket` y `max_bucket` (cierre de huecos).
 
     `lower_bucket` es el bucket del último tick previo a la pasada o, si no lo
@@ -186,11 +239,12 @@ def gap_candidates_between(lower_bucket: datetime, max_bucket: datetime) -> list
     empieza en el primer tick y jamás se fabrican velas para el pasado.
     Los buckets con ticks reales se filtran después en `mark_gap_candles`.
     """
+    delta = TIMEFRAME_DELTAS[timeframe]
     candidates: list[datetime] = []
-    cursor = lower_bucket + TIMEDELTA_1M
+    cursor = lower_bucket + delta
     while cursor < max_bucket:
         candidates.append(cursor)
-        cursor += TIMEDELTA_1M
+        cursor += delta
     return candidates
 
 
@@ -281,15 +335,21 @@ def candle_cursor(row: CandleRow) -> str:
     return encode_cursor(row.bucket_start, row.id)
 
 
-async def candle_rows_for(session: AsyncSession, symbol: str, buckets: Sequence[datetime]) -> list[CandleRow]:
-    """Velas 1m de `buckets` para el fan-out WS (BUILD-029, post-commit)."""
+async def candle_rows_for(
+    session: AsyncSession,
+    symbol: str,
+    buckets: Sequence[datetime],
+    *,
+    timeframe: Timeframe = "1m",
+) -> list[CandleRow]:
+    """Velas de `timeframe` en `buckets` para el fan-out WS (post-commit)."""
     if not buckets:
         return []
     stmt = (
         select(CandleRow)
         .where(
             CandleRow.symbol == symbol,
-            CandleRow.timeframe == "1m",
+            CandleRow.timeframe == timeframe,
             CandleRow.bucket_start.in_(buckets),
         )
         .order_by(CandleRow.bucket_start.asc())
@@ -329,7 +389,9 @@ def row_to_candle(row: CandleRow) -> Candle:
 
 __all__ = [
     "TIMEDELTA_1M",
+    "TIMEFRAME_DELTAS",
     "FeedCounts",
+    "bucket_start",
     "bucket_start_1m",
     "candle_cursor",
     "candle_rows_for",
@@ -341,6 +403,7 @@ __all__ = [
     "list_tick_rows",
     "mark_gap_candles",
     "max_tick_ts",
+    "recompute_candles",
     "recompute_candles_1m",
     "row_to_candle",
     "row_to_tick",

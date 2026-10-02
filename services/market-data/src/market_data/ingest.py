@@ -1,4 +1,4 @@
-"""ingest — normalización, persistencia y agregación de ticks (K §4.4, BUILD-027).
+"""ingest — normalización, persistencia y agregación de ticks (K §4.4, BUILD-027/030).
 
 Flujo por pasada (`ingest_once`):
 
@@ -7,19 +7,21 @@ Flujo por pasada (`ingest_once`):
    los inválidos van a cuarentena: se cuentan como descartados y **jamás** se
    corrigen ni persisten;
 3. se insertan deduplicados (`uq_tick_dedup`: symbol/source/ts/price);
-4. se recalcula la vela 1m de los buckets tocados (open/close primer/último,
-   high/low extremos, invariante REQ-028 estructural);
+4. se recalculan las velas de **todos los timeframes** (`1m`…`1d`, BUILD-030)
+   de los buckets tocados (open/close primer/último, high/low extremos,
+   invariante REQ-028 estructural; cada timeframe es función pura de los ticks
+   ⇒ replay idéntico);
 5. los buckets cerrados sin ticks entre el tick previo y el nuevo se marcan
-   `gap=true` (K §4.4(c), nunca fabricados);
+   `gap=true` en cada timeframe (K §4.4(c), nunca fabricados);
 6. **tras el commit**, el hub WebSocket recibe los ticks insertados y las velas
-   1m reales (`tick`/`candle` por topic, BUILD-029); los buckets `gap` no se
-   publican (REST backfill) y el cache de snapshot queda en el bucket más
-   reciente.
+   reales de cada timeframe suscrito (`tick`/`candle` por topic `ticks:{symbol}`
+   y `candles:{symbol}:{tf}`, BUILD-029/030); los buckets `gap` no se publican
+   (REST backfill) y el cache de snapshot queda en el bucket más reciente.
 
 `IngestPoller` repite el ciclo cada `ingest_interval_seconds` **solo si**
 `ingest_enabled` (apagado por defecto; el deploy lo activa). El fan-out es
 in-process: no hay productor de ticks en Redpanda aún (desviación documentada
-en K §4; el relay del outbox `SymbolUpdated` sí llega en BUILD-029).
+en K §4; el relay del outbox `SymbolUpdated` sí está en BUILD-029).
 """
 
 from __future__ import annotations
@@ -36,18 +38,18 @@ from platform_kernel.clock import utcnow
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from market_data.config import MarketDataSettings
-from market_data.domain.models import CanonicalDataError, Quote, Tick
+from market_data.domain.models import TIMEFRAMES, CanonicalDataError, Quote, Tick, Timeframe
 from market_data.domain.protocols import MarketDataProvider, ProviderError
 from market_data.format import fmt_price
 from market_data.normalization import RawTick, normalize_tick
 from market_data.store import (
-    bucket_start_1m,
+    bucket_start,
     candle_rows_for,
     gap_candidates_between,
     insert_ticks,
     mark_gap_candles,
     max_tick_ts,
-    recompute_candles_1m,
+    recompute_candles,
     row_to_candle,
 )
 
@@ -86,7 +88,7 @@ def raw_tick_from_quote(quote: Quote, *, recv_ts: datetime) -> RawTick:
 
 
 class IngestService:
-    """Persiste ticks normalizados y sus velas 1m con huecos explícitos."""
+    """Persiste ticks normalizados y sus velas multi-timeframe con huecos explícitos."""
 
     def __init__(
         self,
@@ -131,7 +133,7 @@ class IngestService:
 
         async with self._session_factory() as session:
             inserted_by_symbol: dict[str, list[datetime]] = {}
-            real_by_symbol: dict[str, list[datetime]] = {}
+            real_by_symbol: dict[str, dict[Timeframe, list[datetime]]] = {}
             for symbol, symbol_ticks in by_symbol.items():
                 prior_ts = await max_tick_ts(session, symbol)
                 inserted_ts = await insert_ticks(session, symbol_ticks)
@@ -141,21 +143,30 @@ class IngestService:
                     continue
                 stats.symbols.add(symbol)
                 inserted_by_symbol[symbol] = inserted_ts
-                buckets = sorted({bucket_start_1m(ts) for ts in inserted_ts})
-                real_by_symbol[symbol] = await recompute_candles_1m(session, symbol, buckets)
-                stats.candles_updated += len(buckets)
-                # Huecos: entre el bucket inferior observado (previo o de esta
-                # pasada) y el bucket superior, sin fabricar pasado previo al
-                # primer tick (K §4.4(c)).
-                lower = bucket_start_1m(prior_ts) if prior_ts is not None else min(buckets)
-                candidates = gap_candidates_between(lower, max(buckets))
                 newest = symbol_ticks[-1]
-                stats.gaps_marked += await mark_gap_candles(
-                    session, symbol, candidates, source=newest.source, simulated=newest.simulated
-                )
+                real_by_tf: dict[Timeframe, list[datetime]] = {}
+                for timeframe in TIMEFRAMES:
+                    buckets = sorted({bucket_start(ts, timeframe) for ts in inserted_ts})
+                    real_by_tf[timeframe] = await recompute_candles(session, symbol, timeframe, buckets)
+                    stats.candles_updated += len(buckets)
+                    # Huecos: entre el bucket inferior observado (previo o de esta
+                    # pasada) y el bucket superior, sin fabricar pasado previo al
+                    # primer tick (K §4.4(c)). Sólo buckets realmente vacíos.
+                    lower = bucket_start(prior_ts, timeframe) if prior_ts is not None else min(buckets)
+                    candidates = gap_candidates_between(lower, max(buckets), timeframe)
+                    stats.gaps_marked += await mark_gap_candles(
+                        session,
+                        symbol,
+                        candidates,
+                        source=newest.source,
+                        simulated=newest.simulated,
+                        timeframe=timeframe,
+                    )
+                real_by_symbol[symbol] = real_by_tf
             await session.commit()
-            # Fan-out WS solo con datos ya duraderos (BUILD-029): velas 1m
-            # reales (los huecos van por backfill REST) y ticks insertados.
+            # Fan-out WS solo con datos ya duraderos (BUILD-029/030): velas
+            # reales de cada timeframe (los huecos van por backfill REST) y
+            # ticks insertados.
             if self._hub is not None and inserted_by_symbol:
                 await self._publish(session, by_symbol, inserted_by_symbol, real_by_symbol)
         return stats
@@ -165,9 +176,9 @@ class IngestService:
         session: AsyncSession,
         by_symbol: dict[str, list[Tick]],
         inserted_by_symbol: dict[str, list[datetime]],
-        real_by_symbol: dict[str, list[datetime]],
+        real_by_symbol: dict[str, dict[Timeframe, list[datetime]]],
     ) -> None:
-        """Publica ticks/velas en el hub in-process (post-commit, BUILD-029)."""
+        """Publica ticks/velas en el hub in-process (post-commit, BUILD-029/030)."""
         hub = self._hub
         if hub is None:  # pragma: no cover — defensa; `_publish` solo se llama con hub
             return
@@ -199,29 +210,29 @@ class IngestService:
                         "simulated": tick.simulated,
                     },
                 )
-        for symbol, buckets in real_by_symbol.items():
-            if not buckets:
-                continue
-            topic = f"candles:{symbol}:1m"
-            for row in await candle_rows_for(session, symbol, buckets):
-                candle = row_to_candle(row)
-                hub.publish(
-                    topic,
-                    "candle",
-                    {
-                        "symbol": candle.symbol,
-                        "timeframe": candle.timeframe,
-                        "ts": candle.ts.isoformat(),
-                        "open": fmt_price(candle.open),
-                        "high": fmt_price(candle.high),
-                        "low": fmt_price(candle.low),
-                        "close": fmt_price(candle.close),
-                        "volume": fmt_price(candle.volume),
-                        "gap": candle.gap,
-                        "source": candle.source,
-                        "simulated": candle.simulated,
-                    },
-                )
+            for timeframe, buckets in real_by_symbol.get(symbol, {}).items():
+                if not buckets:
+                    continue
+                topic = f"candles:{symbol}:{timeframe}"
+                for row in await candle_rows_for(session, symbol, buckets, timeframe=timeframe):
+                    candle = row_to_candle(row)
+                    hub.publish(
+                        topic,
+                        "candle",
+                        {
+                            "symbol": candle.symbol,
+                            "timeframe": candle.timeframe,
+                            "ts": candle.ts.isoformat(),
+                            "open": fmt_price(candle.open),
+                            "high": fmt_price(candle.high),
+                            "low": fmt_price(candle.low),
+                            "close": fmt_price(candle.close),
+                            "volume": fmt_price(candle.volume),
+                            "gap": candle.gap,
+                            "source": candle.source,
+                            "simulated": candle.simulated,
+                        },
+                    )
 
 
 class IngestPoller:

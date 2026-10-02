@@ -204,6 +204,48 @@ def test_subscribe_snapshot_y_delta_tras_ingest() -> None:
         assert tick["data"]["simulated"] is True
 
 
+def test_fanout_de_velas_por_timeframe_1m_y_5m() -> None:
+    """BUILD-030: cada timeframe tiene su topic `candles:{symbol}:{tf}`."""
+    from market_data.store import bucket_start
+
+    with _client() as client:
+        with _connect(client) as ws:
+            _auth(ws)
+            ack1 = _subscribe(ws, f"candles:{SYMBOL}:1m", sub_id="c1")
+            assert ack1["results"] == [{"topic": f"candles:{SYMBOL}:1m", "result": "ok"}]
+            snap1 = ws.receive_json()
+            assert snap1["type"] == "snapshot" and snap1["data"] is None
+
+            ack5 = _subscribe(ws, f"candles:{SYMBOL}:5m", sub_id="c2")
+            assert ack5["results"] == [{"topic": f"candles:{SYMBOL}:5m", "result": "ok"}]
+            snap5 = ws.receive_json()
+            assert snap5["type"] == "snapshot" and snap5["data"] is None
+
+            now = utcnow()
+            _ingest(client, [_raw("1.10100000", ts=now)], now=now)
+
+            candle1 = ws.receive_json()  # orden de publicación: TIMEFRAMES (1m antes que 5m)
+            candle5 = ws.receive_json()
+            # seq es por topic: cada vela continúa la snapshot de su propio topic
+            assert candle1["seq"] == snap1["seq"] + 1
+            assert candle5["seq"] == snap5["seq"] + 1
+            assert candle1["type"] == "candle" and candle5["type"] == "candle"
+            assert candle1["data"]["timeframe"] == "1m"
+            assert candle5["data"]["timeframe"] == "5m"
+            assert candle1["data"]["ts"] == bucket_start(now, "1m").isoformat()
+            assert candle5["data"]["ts"] == bucket_start(now, "5m").isoformat()
+            assert candle1["data"]["open"] == "1.10100000" and candle1["data"]["close"] == "1.10100000"
+            assert candle1["data"]["volume"] is None  # _raw sin tamaño ⇒ volume NULL
+            assert candle1["data"]["gap"] is False and candle1["data"]["simulated"] is True
+
+        # la reconexión ve la última vela publicada (estado, no vacío)
+        with _connect(client) as ws2:
+            _auth(ws2)
+            _subscribe(ws2, f"candles:{SYMBOL}:5m")
+            snap = ws2.receive_json()
+            assert snap["data"]["timeframe"] == "5m" and snap["data"]["gap"] is False
+
+
 def test_topics_reservados_y_desconocidos_forbidden_anti_bola() -> None:
     with _client() as client, _connect(client) as ws:
         _auth(ws)

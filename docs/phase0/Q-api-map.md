@@ -254,7 +254,7 @@ Convención de columna **Idem**: `Sí` = efecto único garantizado con `Idempote
 | GET | `/api/v1/market-data/symbols` | Símbolos disponibles con sesión de mercado (`open`/`closed`/`halted` + `next_open`/`next_close`) y estado del feed | **Pública** (en `PUBLIC_PATHS` del gateway) | N/A | **3** (2026-10-01) |
 | GET | `/api/v1/market-data/ticks/{symbol}` | Último tick (snapshot) | `read` | N/A | **3** (2026-10-01) |
 | GET | `/api/v1/market-data/ticks` | Histórico de ticks (cursor, rango ≤ 24 h) | `read` | N/A | **3** (2026-10-01) |
-| GET | `/api/v1/market-data/candles/{symbol}/{timeframe}` | Velas OHLC (cursor, `from/to`) | `read` | N/A | **3** (2026-10-01) |
+| GET | `/api/v1/market-data/candles/{symbol}/{timeframe}` | Velas OHLC de `1m/5m/15m/1h/4h/1d` (cursor, `from/to`; agregación multi-timeframe desde BUILD-030) | `read` | N/A | **3** (2026-10-01) |
 | GET | `/api/v1/market-data/status` | Estado del feed: `simulated/real`, latencia, huecos detectados | `read` | N/A | **3** (2026-10-01) |
 | GET | `/api/v1/admin/market-data/providers` | Estado de adapters de proveedores | `admin` | N/A | 7 |
 

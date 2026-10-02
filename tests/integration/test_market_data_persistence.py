@@ -16,10 +16,10 @@ from decimal import Decimal
 
 import pytest
 from market_data.db import get_session_factory
-from market_data.domain.models import Quote
+from market_data.domain.models import TIMEFRAMES, Quote
 from market_data.ingest import IngestPoller, IngestService, IngestStats
 from market_data.normalization import RawTick
-from market_data.store import bucket_start_1m, list_candle_rows, list_tick_rows
+from market_data.store import bucket_start, bucket_start_1m, list_candle_rows, list_tick_rows
 from market_data.tables import CandleRow, TickRow
 from platform_kernel.clock import utcnow
 from platform_kernel.security.tokens import new_access_token
@@ -114,7 +114,7 @@ async def test_ingest_persists_ticks_and_derives_ohlc_with_invariants(market_dat
     assert stats.inserted == 3
     assert stats.quarantined == 0
     assert stats.gaps_marked == 0
-    assert stats.candles_updated == 1
+    assert stats.candles_updated == 6  # un bucket por timeframe (1m…1d, BUILD-030)
     assert await _count(TickRow) == 3
 
     candle = await _candle(SYMBOL, base)
@@ -300,10 +300,15 @@ async def test_candles_endpoint_interleaves_gaps_and_validates_timeframe(market_
         invalid = await client.get(f"/api/v1/market-data/candles/{SYMBOL}/2m", headers=_auth())
         assert invalid.status_code == 422  # timeframe fuera de spec ⇒ rechazo tipado
 
-        empty_tf = await client.get(f"/api/v1/market-data/candles/{SYMBOL}/5m", headers=_auth())
-        assert empty_tf.status_code == 200  # 5m se acepta; el agregador llega en BUILD-030
-        assert empty_tf.json()["data"] == []
-        assert empty_tf.json()["page"]["has_more"] is False
+        five = await client.get(f"/api/v1/market-data/candles/{SYMBOL}/5m", headers=_auth())
+        assert five.status_code == 200  # BUILD-030: 5m agregado desde los mismos ticks
+        rows5 = five.json()["data"]
+        expected5 = {bucket_start(ts, "5m") for ts in (base - timedelta(minutes=3), base)}
+        assert {datetime.fromisoformat(row["ts"]) for row in rows5} == expected5
+        assert all(row["gap"] is False for row in rows5)
+        assert min(Decimal(row["low"]) for row in rows5) == Decimal("1.09000000")
+        assert max(Decimal(row["high"]) for row in rows5) == Decimal("1.10000000")
+        assert five.json()["page"]["has_more"] is False
 
         candles = await client.get(f"/api/v1/market-data/candles/{SYMBOL}/1m", headers=_auth())
         assert candles.status_code == 200
@@ -343,7 +348,12 @@ async def test_status_reports_counts_latency_and_simulated(market_data_app) -> N
         assert body["simulated"] is True
         assert body["ingest_enabled"] is False  # poller apagado en tests
         assert body["ticks_total"] == 2
-        assert body["candles_total"] == 4  # 2 reales + 2 huecos
+        # 2 huecos 1m + una vela real por bucket/tf de los 6 timeframes (BUILD-030)
+        tick_buckets = (base - timedelta(minutes=3), base)
+        expected_candles = 2 + sum(
+            len({bucket_start(ts, timeframe) for ts in tick_buckets}) for timeframe in TIMEFRAMES
+        )
+        assert body["candles_total"] == expected_candles
         assert body["gaps_total"] == 2
         assert body["last_tick_ts"] is not None
         assert body["last_latency_ms"] is not None and body["last_latency_ms"] >= 0
