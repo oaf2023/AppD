@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timedelta
-from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -37,7 +36,6 @@ from market_data.catalog import (
 )
 from market_data.db import get_session
 from market_data.domain.models import (
-    PRICE_EXPONENT,
     AssetClass,
     Candle,
     MarketStatus,
@@ -47,6 +45,8 @@ from market_data.domain.models import (
 )
 from market_data.domain.protocols import MarketDataProvider
 from market_data.domain.symbol_master import OPEN_SCAN_DAYS, compute_market_status, spec_asof
+from market_data.format import fmt_price as _fmt_price
+from market_data.format import fmt_spec as _fmt_spec
 from market_data.pagination import decode_cursor, decode_symbol_cursor, encode_symbol_cursor
 from market_data.schemas import (
     CandleOut,
@@ -216,18 +216,6 @@ async def status(
         last_latency_ms=counts.last_latency_ms,
         as_of=utcnow(),
     )
-
-
-def _fmt_price(value) -> str | None:  # type: ignore[no-untyped-def]
-    """Forma canónica de precio: `Decimal` con 8 decimales (K §2, ADR-0006)."""
-    if value is None:
-        return None
-    return str(value.quantize(PRICE_EXPONENT))
-
-
-def _fmt_spec(value: Decimal) -> str:
-    """Forma canónica de un parámetro de spec (sin notación científica, ADR-0006)."""
-    return format(value.normalize(), "f")
 
 
 async def _market_status(

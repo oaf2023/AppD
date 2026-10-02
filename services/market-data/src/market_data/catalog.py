@@ -1,8 +1,9 @@
 """catalog — consultas del symbol master versionado (REQ-025/REQ-099, BUILD-028).
 
 Capa de datos del catálogo: símbolos, specs `valid_from`/`valid_to`, sesiones
-UTC, suspensiones, festivos y outbox de `SymbolUpdated` (K §4.2 — el drain del
-bus llega con BUILD-029). Los convertidores fila→dominio garantizan `Decimal`
+UTC, suspensiones, festivos y outbox de `SymbolUpdated` (K §4.2 — el drain a
+`market.symbols.changed` vive en `market_data.outbox.py`, BUILD-029). Los
+convertidores fila→dominio garantizan `Decimal`
 y timestamps con zona (ADR-0006).
 """
 

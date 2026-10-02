@@ -1,0 +1,546 @@
+asyncapi: 2.6.0
+id: https://github.com/oaf2023/AppD/blob/master/services/market-data/asyncapi.yaml
+info:
+  title: Market Data Streaming API (`/ws/v1`)
+  version: "1.0.0"
+  description: |
+    Contrato único (ADR-0004) del hub WebSocket en proceso de `market-data`
+    (`market_data.ws`, BUILD-029). Fuente de verdad del comportamiento:
+    `docs/phase0/R-websocket-map.md` (§1 topics, §2 autenticación, §3
+    secuenciación/reconexión, §4 límites, §5 backpressure/heartbeat,
+    §7 métricas).
+
+    **Handshake**
+    - Ruta `GET /ws/v1` con Upgrade WebSocket; **subprotocolo obligatorio**
+      `v1.platform.json` (`Sec-WebSocket-Protocol`), si no ⇒ cierre `4400`.
+    - `Origin` validado contra `ws_allowed_origins` (vacío ⇒ cualquiera),
+      si no ⇒ cierre `4403`.
+    - Autenticación **por frame**: el primer mensaje debe ser
+      `{"type":"auth","access_token":"<JWT access>"}` dentro de
+      `ws_auth_timeout_seconds` (5 s), si no ⇒ cierre `4401`.
+      El ticket `POST /api/v1/auth/ws-tickets` de R §2.2 queda fuera de esta
+      versión; se usa el JWT de acceso estándar (`platform_kernel.security.tokens`).
+
+    **Secuenciación**: por conexión y topic, `seq` base 1 (`snapshot` = 1);
+    los deltas son contiguos. Hueco ⇒ `resync {topic, from_seq}`; si el rango
+    vive en el ring buffer (`ws_ring_max_messages`, por defecto 1000) se
+    reenvía con `ack {replayed}` + frames, fuera ⇒ `resync.required`
+    ⇒ backfill REST (`GET /ticks`, `GET /candles`).
+
+    **Cierres (WebSocket close code)**
+    | Código | Motivo |
+    |---|---|
+    | 4400 | frame/JSON inválido, subprotocolo ausente, 3 strikes de protocolo |
+    | 4401 | sin `auth` en el plazo, token inválido/caducado (`auth.expired`) |
+    | 4403 | `Origin` no permitido |
+    | 4404 | idle sin suscripciones ≥ `ws_idle_timeout_seconds` |
+    | 4408 | 2 heartbeats sin `pong` (advisory previo `heartbeat_degraded`) |
+    | 4410 | backpressure: cola ≥ `ws_ring_max_messages` |
+    | 4429 | rate limit (frames/s, subscribe/min, conexiones/usuario) |
+    | 1001 | apagado ordenado del servidor (`going away`) |
+
+    **Límites** (R §4/§5.3, defaults): 20 frames/s y 60/min de cliente,
+    30 `subscribe`/min, ≤ 100 topics/mensaje, ≤ `ws_max_subscriptions`
+    suscripciones, ≤ 5 conexiones/usuario, JSON ≤ 64 KiB y profundidad ≤ 4.
+    3 infracciones ⇒ cierre. El servidor nunca acepta más trabajo del que
+    puede enviar: `advisory slow_consumer` al 70 % de la cola y cierre `4410`.
+
+    **Topics**: `ticks:{symbol}` (payload tipo `tick`), `candles:{symbol}:{tf}`
+    con `tf ∈ 1m|5m|15m|1h|4h|1d` (payload tipo `candle`). Los símbolos se
+    validan contra el catálogo (`market.symbols.changed` lo mantiene al día);
+    prefijos reservados (`account:`, `orders:`, `positions:`,
+    `transactions:`, `notifications:`) ⇒ `forbidden` (anti-BOLA, respuesta
+    idéntica a inexistente).
+
+    **Modo**: `mode` en `auth.ok` es `DEMO` (o `LIVE` si `flag_live_trading`);
+    los frames de datos lo arrastran para que el cliente nunca confunda
+    simulado con real.
+  contact:
+    name: MonedasAR / equipo Fase 3
+    url: https://github.com/oaf2023/AppD
+  license:
+    name: Propietario
+defaultContentType: application/json
+
+servers:
+  dev:
+    url: ws://localhost:{port}
+    protocol: ws
+    protocolVersion: "13"
+    description: "market-data local (compose: puerto expuesto por el servicio)."
+    variables:
+      port:
+        default: "8000"
+        description: Puerto HTTP del servicio market-data detrás del gateway.
+
+channels:
+  /ws/v1:
+    description: |
+      Único canal. `subscribe`/`unsubscribe`/`resync` son mensajes cliente;
+      los frames de datos (`tick`, `candle`, `snapshot`) sólo fluyen tras un
+      `subscribe` con resultado `ok`.
+    parameters: {}
+    subscribe:
+      summary: Mensajes que acepta el hub desde el cliente
+      operationId: receiveClientMessage
+      message:
+        oneOf:
+          - $ref: "#/components/messages/auth"
+          - $ref: "#/components/messages/ping"
+          - $ref: "#/components/messages/subscribe"
+          - $ref: "#/components/messages/unsubscribe"
+          - $ref: "#/components/messages/resync"
+    publish:
+      summary: Frames que envía el hub al cliente
+      operationId: sendServerFrame
+      message:
+        oneOf:
+          - $ref: "#/components/messages/authOk"
+          - $ref: "#/components/messages/authExpired"
+          - $ref: "#/components/messages/ack"
+          - $ref: "#/components/messages/snapshot"
+          - $ref: "#/components/messages/tick"
+          - $ref: "#/components/messages/candle"
+          - $ref: "#/components/messages/pong"
+          - $ref: "#/components/messages/serverPing"
+          - $ref: "#/components/messages/error"
+          - $ref: "#/components/messages/advisory"
+          - $ref: "#/components/messages/resyncRequired"
+
+components:
+  messages:
+    # ---------------------------------------------------------- cliente → hub
+    auth:
+      name: auth
+      title: Autenticación (primer frame obligatorio)
+      summary: Presenta el JWT de acceso; debe ser el primer mensaje.
+      payload:
+        type: object
+        additionalProperties: false
+        required: [type, access_token]
+        properties:
+          type:
+            type: string
+            const: auth
+          access_token:
+            type: string
+            description: JWT access firmado con `JWT_SECRET` (issuer/audience del kernel).
+      examples:
+        - auth:
+            type: auth
+            access_token: eyJhbGciOi...
+    ping:
+      name: ping
+      title: Ping del cliente (keepalive + RTT)
+      summary: El cliente debe responder a los `ping` del servidor con `pong`.
+      payload:
+        type: object
+        additionalProperties: false
+        required: [type]
+        properties:
+          type:
+            type: string
+            const: ping
+    subscribe:
+      name: subscribe
+      title: Suscripción a topics
+      summary: Ack primero y snapshot después (decisión BUILD-029).
+      payload:
+        type: object
+        additionalProperties: false
+        required: [type, id, topics]
+        properties:
+          type:
+            type: string
+            const: subscribe
+          id:
+            type: string
+            minLength: 1
+            maxLength: 128
+            description: Correlación con el `ack` correspondiente.
+          topics:
+            type: array
+            minItems: 1
+            maxItems: 100
+            items:
+              type: string
+              examples: ["ticks:EUR/USD", "candles:EUR/USD:1m"]
+      examples:
+        - subscribe:
+            type: subscribe
+            id: s1
+            topics: ["ticks:EUR/USD"]
+    unsubscribe:
+      name: unsubscribe
+      title: Baja de topics (idempotente)
+      payload:
+        type: object
+        additionalProperties: false
+        required: [type, id, topics]
+        properties:
+          type:
+            type: string
+            const: unsubscribe
+          id:
+            type: string
+            minLength: 1
+            maxLength: 128
+          topics:
+            type: array
+            minItems: 1
+            maxItems: 100
+            items:
+              type: string
+    resync:
+      name: resync
+      title: Repeticion desde seq
+      summary: >-
+        Pide replay de un topic suscrito desde `from_seq`; fuera del ring
+        responde `resync.required` (backfill REST).
+      payload:
+        type: object
+        additionalProperties: false
+        required: [type, topic, from_seq]
+        properties:
+          type:
+            type: string
+            const: resync
+          topic:
+            type: string
+          from_seq:
+            type: integer
+            minimum: 0
+            description: Última seq recibida por el cliente; reenviar desde from_seq+1.
+
+    # ---------------------------------------------------------- hub → cliente
+    authOk:
+      name: auth.ok
+      title: Autenticación aceptada
+      payload:
+        type: object
+        required: [type, ts, mode, connection_id, user_id, scopes, expires_at]
+        properties:
+          type:
+            type: string
+            const: auth.ok
+          ts:
+            type: string
+            format: date-time
+          mode:
+            type: string
+            enum: [DEMO, LIVE]
+            description: DEMO salvo `flag_live_trading`; los frames de datos lo arrastran.
+          connection_id:
+            type: string
+            format: uuid
+          user_id:
+            type: string
+          scopes:
+            type: array
+            items:
+              type: string
+          expires_at:
+            type: string
+            format: date-time
+    authExpired:
+      name: auth.expired
+      title: Token caducado durante la sesion
+      summary: El hub cierra con 4401 tras enviar este frame.
+      payload:
+        type: object
+        required: [type, ts, mode]
+        properties:
+          type:
+            type: string
+            const: auth.expired
+          ts:
+            type: string
+            format: date-time
+          mode:
+            type: string
+            enum: [DEMO, LIVE]
+    ack:
+      name: ack
+      title: Acuse de subscribe/unsubscribe
+      payload:
+        type: object
+        required: [type, ts, mode, id, results]
+        properties:
+          type:
+            type: string
+            const: ack
+          ts:
+            type: string
+            format: date-time
+          mode:
+            type: string
+            enum: [DEMO, LIVE]
+          id:
+            type: string
+          results:
+            type: array
+            items:
+              type: object
+              required: [topic, result]
+              properties:
+                topic:
+                  type: string
+                result:
+                  type: string
+                  enum: [ok, forbidden, invalid_topic, topic_limit, rate_limited]
+                replayed:
+                  type: integer
+                  minimum: 0
+                  description: Sólo en `ack` de `resync` con replay dentro del ring.
+      examples:
+        - ack:
+            type: ack
+            ts: "2026-10-02T00:00:00+00:00"
+            mode: DEMO
+            id: s1
+            results: [{topic: "ticks:EUR/USD", result: ok}]
+    snapshot:
+      name: snapshot
+      title: Estado actual del topic (seq 1)
+      summary: Entregado tras `subscribe ok` y tras cada `resync` reenviable.
+      payload:
+        type: object
+        required: [type, ts, mode, topic, seq, data]
+        properties:
+          type:
+            type: string
+            const: snapshot
+          ts:
+            type: string
+            format: date-time
+          mode:
+            type: string
+            enum: [DEMO, LIVE]
+          topic:
+            type: string
+          seq:
+            type: integer
+            minimum: 1
+            description: Siempre 1 en la primera entrega de un topic.
+          data:
+            description: >-
+              Último mensaje conocido del topic (`tick`/`candle`); `null` si
+              aún no hay datos.
+            oneOf:
+              - $ref: "#/components/schemas/tickData"
+              - $ref: "#/components/schemas/candleData"
+              - type: "null"
+    tick:
+      name: tick
+      title: Delta de tick
+      summary: Deltas contiguos por topic `ticks:{symbol}` (seq creciente).
+      payload:
+        type: object
+        required: [type, ts, mode, topic, seq, data]
+        properties:
+          type:
+            type: string
+            const: tick
+          ts:
+            type: string
+            format: date-time
+          mode:
+            type: string
+            enum: [DEMO, LIVE]
+          topic:
+            type: string
+          seq:
+            type: integer
+            minimum: 2
+          data:
+            $ref: "#/components/schemas/tickData"
+    candle:
+      name: candle
+      title: Delta de vela
+      summary: >-
+        Vela actualizada en `candles:{symbol}:{tf}`; `gap=true` ⇒ OHLC/volumen
+        pueden ser null (hueco conocido, K §4.4(c)).
+      payload:
+        type: object
+        required: [type, ts, mode, topic, seq, data]
+        properties:
+          type:
+            type: string
+            const: candle
+          ts:
+            type: string
+            format: date-time
+          mode:
+            type: string
+            enum: [DEMO, LIVE]
+          topic:
+            type: string
+          seq:
+            type: integer
+            minimum: 2
+          data:
+            $ref: "#/components/schemas/candleData"
+    pong:
+      name: pong
+      title: Respuesta al ping del cliente
+      payload:
+        type: object
+        required: [type, ts, mode]
+        properties:
+          type:
+            type: string
+            const: pong
+          ts:
+            type: string
+            format: date-time
+          mode:
+            type: string
+            enum: [DEMO, LIVE]
+    serverPing:
+      name: ping
+      title: Heartbeat del servidor
+      summary: >-
+        Cada `ws_heartbeat_interval_seconds`; sin `pong` en 2 tandas ⇒
+        advisory `heartbeat_degraded` y luego cierre 4408.
+      payload:
+        type: object
+        required: [type, ts, mode]
+        properties:
+          type:
+            type: string
+            const: ping
+          ts:
+            type: string
+            format: date-time
+          mode:
+            type: string
+            enum: [DEMO, LIVE]
+    error:
+      name: error
+      title: Error de protocolo o rate limit
+      summary: >-
+        No es close por sí solo: 3 errores ⇒ close con el `code` indicado.
+      payload:
+        type: object
+        required: [type, ts, mode, code, message]
+        properties:
+          type:
+            type: string
+            const: error
+          ts:
+            type: string
+            format: date-time
+          mode:
+            type: string
+            enum: [DEMO, LIVE]
+          code:
+            type: integer
+            enum: [4400, 4429]
+          message:
+            type: string
+          topic:
+            type: string
+    advisory:
+      name: advisory
+      title: Aviso no fatal
+      payload:
+        type: object
+        required: [type, ts, mode, code]
+        properties:
+          type:
+            type: string
+            const: advisory
+          ts:
+            type: string
+            format: date-time
+          mode:
+            type: string
+            enum: [DEMO, LIVE]
+          code:
+            type: string
+            enum: [slow_consumer, heartbeat_degraded]
+          queue_pct:
+            type: integer
+            minimum: 0
+            maximum: 100
+            description: Sólo en `slow_consumer` (umbral 70 %).
+    resyncRequired:
+      name: resync.required
+      title: Rango fuera del ring buffer
+      summary: El cliente debe hacer backfill REST y resincronizar.
+      payload:
+        type: object
+        required: [type, ts, mode, topic, from_seq]
+        properties:
+          type:
+            type: string
+            const: resync.required
+          ts:
+            type: string
+            format: date-time
+          mode:
+            type: string
+            enum: [DEMO, LIVE]
+          topic:
+            type: string
+          from_seq:
+            type: integer
+            minimum: 0
+
+  schemas:
+    tickData:
+      type: object
+      required: [symbol, price, side, ts, source, simulated]
+      properties:
+        symbol:
+          type: string
+          examples: ["EUR/USD"]
+        price:
+          type: string
+          description: Decimal canónico como texto (ADR-0006; nunca float).
+          pattern: "^-?[0-9]+(\\.[0-9]+)?$"
+        side:
+          type: string
+          enum: [buy, sell, na]
+        size:
+          type: ["string", "null"]
+          description: Decimal como texto o null si el proveedor no informa.
+        ts:
+          type: string
+          format: date-time
+        source:
+          type: string
+          examples: ["MOCK", "KRAKEN"]
+        simulated:
+          type: boolean
+          description: true ⇒ dato simulado; mirar también `mode` del frame.
+    candleData:
+      type: object
+      required: [symbol, timeframe, ts, open, high, low, close, gap, source, simulated]
+      properties:
+        symbol:
+          type: string
+        timeframe:
+          type: string
+          enum: ["1m", "5m", "15m", "1h", "4h", "1d"]
+        ts:
+          type: string
+          format: date-time
+          description: Inicio de la vela en UTC.
+        open:
+          type: ["string", "null"]
+        high:
+          type: ["string", "null"]
+        low:
+          type: ["string", "null"]
+        close:
+          type: ["string", "null"]
+        volume:
+          type: ["string", "null"]
+        gap:
+          type: boolean
+          description: true ⇒ hueco conocido; OHLC/volumen pueden ser null.
+        source:
+          type: string
+        simulated:
+          type: boolean

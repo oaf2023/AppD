@@ -438,7 +438,7 @@ Superficie `/internal/v1/`: bloqueada en el edge, solo red de servicio, nunca co
 | Compatibilidad | Reglas §1.2 aplicadas por diff de spec contra la rama base; breaking ⇒ falla CI salvo bump de major |
 | Contract tests | (1) *spec diff gate*; (2) tests request/response contra la spec (payload real ∈ esquema); (3) tests de integración consumidor↔productor en compose; (4) **consumer-driven** obligatorio para rutas financieras (`orders`, `payments`, `ledger`) antes de merge |
 | Publicación | Specs versionadas en el repo y servidas en `GET /api/v1/openapi.json` (solo pública) / artefacto interno por servicio |
-| WS | El protocolo `/ws/v1` se especifica como AsyncAPI en `services/market-data/asyncapi.yaml` cuando arranque Fase 3 (mismo principio de contrato único; aún `PENDIENTE`) |
+| WS | El protocolo `/ws/v1` se especifica como AsyncAPI en `services/market-data/asyncapi.yaml` (mismo principio de contrato único; **implementado en BUILD-029, 2026-10-02**) |
 
 ---
 

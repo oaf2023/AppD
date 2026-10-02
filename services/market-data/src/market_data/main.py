@@ -16,14 +16,29 @@ from platform_kernel.metrics import MetricsMiddleware, metrics_response
 from platform_kernel.middleware import RequestContextMiddleware
 from platform_kernel.telemetry import init_telemetry, instrument_app
 
+from market_data.catalog import get_symbol_row
 from market_data.config import MarketDataSettings, get_market_data_settings
 from market_data.db import get_engine, get_session_factory, reset_engine
 from market_data.ingest import IngestPoller, IngestService
+from market_data.outbox import OutboxRelay
 from market_data.providers.factory import create_market_data_provider
 from market_data.routes import router
 from market_data.service import MarketDataService, default_providers
+from market_data.ws import MarketHub, TopicInfo, TopicValidator, ws_router
 
 logger = logging.getLogger("market_data")
+
+
+def _catalog_topic_validator() -> TopicValidator:
+    """Valida el `symbol` contra el catálogo en cada subscribe (R §2.3/§6)."""
+
+    async def validate(info: TopicInfo) -> bool:
+        if info.symbol is None:  # system:announcements
+            return True
+        async with get_session_factory()() as session:
+            return await get_symbol_row(session, info.symbol) is not None
+
+    return validate
 
 
 def create_app(
@@ -35,6 +50,8 @@ def create_app(
     cfg = get_market_data_settings() if settings is None else settings
     setup_logging(cfg.service_name, cfg.log_level)
     init_telemetry(cfg.otel_endpoint, service_name=cfg.service_name)
+
+    hub = MarketHub(cfg, topic_validator=_catalog_topic_validator())
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -48,19 +65,32 @@ def create_app(
         app.state.service = MarketDataService(cfg, client, providers=default_providers(cfg))
         provider = create_market_data_provider(cfg)
         app.state.market_data_provider = provider
+        app.state.ingest_service = IngestService(get_session_factory(), provider, hub=hub)
+        relay = OutboxRelay(get_session_factory(), cfg)
+        app.state.outbox_relay = relay
         poller: IngestPoller | None = None
         if cfg.ingest_enabled:
-            service = IngestService(get_session_factory(), provider)
-            poller = IngestPoller(service, cfg)
+            poller = IngestPoller(app.state.ingest_service, cfg)
             await poller.start()
         app.state.ingest_poller = poller
+        if cfg.outbox_relay_enabled:
+            await relay.start()
         logger.info(
             "market-data listo",
-            extra={"extra_fields": {"environment": cfg.environment, "ingest_enabled": cfg.ingest_enabled}},
+            extra={
+                "extra_fields": {
+                    "environment": cfg.environment,
+                    "ingest_enabled": cfg.ingest_enabled,
+                    "outbox_relay_enabled": cfg.outbox_relay_enabled,
+                }
+            },
         )
         yield
         if poller is not None:
             await poller.stop()
+        if cfg.outbox_relay_enabled:
+            await relay.stop()
+        await hub.shutdown()
         await client.aclose()
         engine = get_engine()
         await engine.dispose()
@@ -73,7 +103,9 @@ def create_app(
         docs_url="/docs" if cfg.environment in ("local", "development") else None,
         redoc_url=None,
     )
+    app.state.hub = hub
     app.include_router(router)
+    app.include_router(ws_router)
     app.add_middleware(MetricsMiddleware, service=cfg.service_name)
     if cfg.cors_origins_list:
         app.add_middleware(

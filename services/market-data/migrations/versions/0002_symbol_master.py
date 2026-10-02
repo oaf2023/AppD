@@ -6,7 +6,8 @@ Utilidad: crea las tablas del catálogo (BUILD-028, REQ-025/REQ-099):
 `symbols` (identidad), `instrument_specs` (specs versionadas con una única
 versión vigente por símbolo), `trading_sessions` (ventanas UTC), 
 `market_suspensions` (`halted`), `market_holidays` (calendarios; seed vacío)
-y `outbox` (eventos `SymbolUpdated` para el bus — drain en BUILD-029).
+y `outbox` (eventos `SymbolUpdated` para el bus — drain implementado en
+`market_data/outbox.py`, BUILD-029).
 Sembrado idempotente del catálogo demo desde `market_data.seed` (mismo origen
 de verdad que los tests): 4 símbolos mock, specs `mode: demo` y sesiones
 forex 24/5 / crypto 24/7 (K §2).

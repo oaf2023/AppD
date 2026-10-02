@@ -281,6 +281,22 @@ def candle_cursor(row: CandleRow) -> str:
     return encode_cursor(row.bucket_start, row.id)
 
 
+async def candle_rows_for(session: AsyncSession, symbol: str, buckets: Sequence[datetime]) -> list[CandleRow]:
+    """Velas 1m de `buckets` para el fan-out WS (BUILD-029, post-commit)."""
+    if not buckets:
+        return []
+    stmt = (
+        select(CandleRow)
+        .where(
+            CandleRow.symbol == symbol,
+            CandleRow.timeframe == "1m",
+            CandleRow.bucket_start.in_(buckets),
+        )
+        .order_by(CandleRow.bucket_start.asc())
+    )
+    return list((await session.execute(stmt)).scalars())
+
+
 def row_to_tick(row: TickRow) -> Tick:
     return Tick(
         symbol=row.symbol,
@@ -316,6 +332,7 @@ __all__ = [
     "FeedCounts",
     "bucket_start_1m",
     "candle_cursor",
+    "candle_rows_for",
     "feed_counts",
     "gap_candidates_between",
     "insert_ticks",

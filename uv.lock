@@ -946,6 +946,7 @@ name = "market-data-service"
 version = "0.1.0"
 source = { editable = "services/market-data" }
 dependencies = [
+    { name = "aiokafka" },
     { name = "alembic" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -960,6 +961,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiokafka", specifier = ">=0.14.0" },
     { name = "alembic", specifier = ">=1.14.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "httpx", specifier = ">=0.28.0" },

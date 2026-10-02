@@ -18,8 +18,9 @@ Proyecto: `MonedasAR` · Dominio: `[DOMAIN]` · Marca: `MonedasAR`
 | Regla no-ficción (K §6.1) | IMPLEMENTADO | Sin fuente → `unavailable` (portada: "dato no disponible"); fuente caída → último snapshot con `stale=true` y `ts` original |
 | Gateway (`PUBLIC_PATHS`, `market_data_url`, `/healthz` agregado) | IMPLEMENTADO | Ruta pública sin JWT; tasa global del gateway aplica |
 | Ticks/velas persistidos + REST §4.3 (BUILD-027, 2026-10-01) | IMPLEMENTADO | Ingesta desde `MarketDataProvider` → normalización con cuarentena → `market_data.ticks` (dedup) → vela 1m con invariantes H/L y huecos `gap=true` explícitos; endpoints `GET /ticks/{symbol}`, `/ticks` (cursor, rango ≤24 h), `/candles/{symbol}/{timeframe}` y `/status` con auth `read`; agregación multi-timeframe sin implementar (BUILD-030) |
-| Symbol master versionado + horarios/suspensiones (BUILD-028, 2026-10-01) | IMPLEMENTADO | Migración `0002_symbol_master`: `symbols`, `instrument_specs` (versionado `valid_from`/`valid_to`, índice único de vigencia), `trading_sessions`, `market_suspensions`, `market_holidays`, `outbox` + seed demo idempotente (EUR/USD, GBP/USD, BTC/USD, ETH/USD); estados `open`/`closed`/`halted` con prioridad suspensión>festivo>horario (REQ-099); `validate_order` con códigos tipados (REQ-025); drain del outbox `SymbolUpdated` → BUILD-029 |
-| Streaming WS e histórico de proveedor | PENDIENTE | Fases 2–3 (ver `R-websocket-map.md`, `Q-api-map.md` §2.7; BUILD-029/030) |
+| Symbol master versionado + horarios/suspensiones (BUILD-028, 2026-10-01) | IMPLEMENTADO | Migración `0002_symbol_master`: `symbols`, `instrument_specs` (versionado `valid_from`/`valid_to`, índice único de vigencia), `trading_sessions`, `market_suspensions`, `market_holidays`, `outbox` + seed demo idempotente (EUR/USD, GBP/USD, BTC/USD, ETH/USD); estados `open`/`closed`/`halted` con prioridad suspensión>festivo>horario (REQ-099); `validate_order` con códigos tipados (REQ-025); drain del outbox `SymbolUpdated` → Redpanda (`market_data/outbox.py` + `OutboxRelay`, BUILD-029) |
+| Hub WS `/ws/v1` en proceso (BUILD-029, 2026-10-02) | IMPLEMENTADO | Subprotocolo `v1.platform.json` + auth por primer frame JWT, `subscribe`→`ack`+`snapshot` con `seq` contigua por topic y ring buffer (1000 msg/5 min) para `resync`/`resync.required`, heartbeat/cierres 4400/4401/4403/4404/4408/4410/4429/1001, backpressure `slow_consumer`, anti-BOLA, métricas `ws_*`, fan-out post-commit `IngestService._publish` (ticks + velas 1m), topics validados contra el catálogo (actualización vía outbox `SymbolUpdated`); contrato `services/market-data/asyncapi.yaml` |
+| Histórico de proveedor + agregación multi-timeframe + indicadores | PENDIENTE | BUILD-030 (agregador tick→vela 5m…1d, replay idéntico), BUILD-031 (SMA/EMA/RSI/MACD), backfill (`HistoricalDataProvider`); ver `R-websocket-map.md`, `Q-api-map.md` §2.7 |
 
 ---
 
@@ -164,9 +165,9 @@ Reglas transversales del catálogo:
 | `market.symbols.changed` | `symbol` | 30 días | invalidación de cache del cliente |
 | `market.dlq` | `adapter` | 30 días (`delete`) | — (interno) |
 
-- Los tópicos WS son los de `R-websocket-map` §4.1; el hub traduce bus → frame con `seq` monotónico por topic, `ts` UTC de servidor y `mode`.
+- Los tópicos WS son los de `R-websocket-map` §4.1; el hub traduce publicación → frame con `seq` monotónico por topic, `ts` UTC de servidor y `mode`. **BUILD-029**: el fan-out es in-process y post-commit (`IngestService._publish` → `market_data.ws.MarketHub`), no aún un consumidor de Redpanda; los tópicos de bus de la tabla siguen siendo el diseño objetivo para redistribución entre instancias.
 - `ticks`/`candles` **no** son eventos de `P-event-catalog.md` (allí figuran como "— (sin evento en `P`)"); el dominio `market-data` sí publica sus eventos operativos propios (`MarketDataConnected`, `TickReceived`, `CandleClosed`, `SymbolUpdated` — `D-domain-map` §1) en su topic de dominio, con el envelope estándar (`P` §1) cuando se registren.
-- Outbox obligatorio para esos eventos operativos; los ticks usan productor directo con acks `all` (son reconstruibles por backfill, no requieren outbox transaccional).
+- Outbox obligatorio para esos eventos operativos; los ticks usan productor directo con acks `all` (son reconstruibles por backfill, no requieren outbox transaccional). **BUILD-029**: outbox implementado para `SymbolUpdated` (`market_data.tables.OutboxRow` + `OutboxRelay` con backoff y DLQ `dlq.market.symbols.changed`, migración `0003_outbox_relay`); el resto de eventos operativos queda pendiente.
 
 ### 4.3 REST para histórico y configuración (`Q-api-map` §2.7)
 

@@ -18,7 +18,7 @@ Además, la API pública es la superficie donde un cambio mal hecho rompe client
 - El artefacto `services/<svc>/openapi.yaml` (`Q-api-map.md` §4) es **generado** desde la implementación/exportación del servicio; el CI exige igualdad con la canónica. Divergencia = fallo de build.
 - Toda ruta FastAPI (pública e interna) debe aparecer en la spec: ruta ausente ⇒ fallo de CI. No hay especificación paralela en wiki ni DTOs escritos a mano fuera de contratos.
 - El gateway compone su superficie `/api/v1` a partir de las specs de los servicios (con `servers` `/api/v1`); las rutas internas viven bajo `/internal/v1` y jamás se enratan en el edge (404).
-- La WS se especificará con AsyncAPI en Fase 3 (`services/market-data/asyncapi.yaml`), mismo principio de contrato único; `PENDIENTE`.
+- La WS se especifica con AsyncAPI en `services/market-data/asyncapi.yaml` (BUILD-029, 2026-10-02), mismo principio de contrato único.
 
 ### 2. Generación de cliente
 

@@ -1,9 +1,15 @@
-"""outbox — relay transactional outbox → Redpanda (ADR-0007, ADR-0016).
+"""outbox — relay transactional outbox → Redpanda (ADR-0007, ADR-0016, BUILD-029).
 
-Cada evento se inserta en la misma transacción que el cambio de estado; aquí se
-publica en batch con reintentos y backoff. Tras `outbox_max_attempts` fallos el
-evento se envía a la DLQ (`dlq.<topic>`). La entrega es at-least-once: `audit`
-deduplica por `event_id`.
+Clón del relay de `accounts`/`identity` adaptado a `market-data`: cada
+`SymbolUpdated` se inserta en la misma transacción que el catálogo
+(`catalog.insert_suspension`) y aquí se publica con reintentos/backoff; tras
+`outbox_max_attempts` va a la DLQ. Entrega at-least-once (`event_id` ida y
+vuelta, P §1).
+
+Diferencia con el resto de servicios: la fila ya persiste el **envelope
+completo** en `payload` y el tópico (`market.symbols.changed`) en `topic`, así
+que la serialización es directa (`json.dumps(row.payload)`) y la clave de
+partición es `aggregate_id` — sin `topic_for_event`.
 """
 
 from __future__ import annotations
@@ -19,43 +25,19 @@ from typing import Protocol
 
 from aiokafka import AIOKafkaProducer
 from aiokafka.errors import KafkaConnectionError, KafkaTimeoutError, NoBrokersAvailable
-from platform_contracts.events import dlq_topic, topic_for_event
+from platform_contracts.events import dlq_topic
 from platform_kernel.clock import utcnow
-from platform_kernel.events import EventEnvelope
-from prometheus_client import Counter, Gauge
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from identity.config import IdentitySettings
-from identity.metrics import _shared_metric
-from identity.models import OutboxEvent
+from market_data.config import MarketDataSettings
+from market_data.metrics import BACKLOG_GAUGE, DEAD_LETTERED_COUNTER, PUBLISHED_COUNTER
+from market_data.tables import OutboxRow
 
-logger = logging.getLogger("identity.outbox")
+logger = logging.getLogger("market_data.outbox")
 
 MAX_ERROR_LENGTH = 2000
-# Los mismos nombres viven en accounts/ledger/market-data: aquí se reutiliza
-# el colector existente si otro servicio ya lo registró (orden de importación
-# indiferente, ver `identity.metrics._shared_metric`).
-BACKLOG_GAUGE: Gauge = _shared_metric(
-    Gauge,
-    "platform_outbox_backlog",
-    "Eventos del outbox pendientes de publicar o enviar a la DLQ",
-    ["service"],
-)
-PUBLISHED_COUNTER: Counter = _shared_metric(
-    Counter,
-    "platform_outbox_published_total",
-    "Eventos del outbox publicados en Redpanda",
-    ["service"],
-)
-DEAD_LETTERED_COUNTER: Counter = _shared_metric(
-    Counter,
-    "platform_outbox_dead_lettered_total",
-    "Eventos del outbox enviados a la DLQ",
-    ["service"],
-)
-
-_CONNECTION_ERRORS = (KafkaConnectionError, KafkaTimeoutError, NoBrokersAvailable)
+CONNECTION_ERRORS = (KafkaConnectionError, KafkaTimeoutError, NoBrokersAvailable)
 _RNG = random.Random()
 
 
@@ -74,21 +56,9 @@ def compute_backoff_ms(
     return max(1, int(delay_ms * factor))
 
 
-def encode_envelope(row: OutboxEvent) -> bytes:
-    """Serializa la fila como envelope canónico JSON."""
-    envelope = EventEnvelope(
-        event_id=row.id,
-        event_type=row.event_type,
-        schema_version=row.schema_version,
-        aggregate_id=row.aggregate_id,
-        aggregate_type=row.aggregate_type,
-        timestamp=row.created_at,
-        correlation_id=row.correlation_id,
-        causation_id=row.causation_id,
-        producer=row.producer,
-        payload=row.payload,
-    )
-    return envelope.model_dump_json().encode("utf-8")
+def encode_payload(row: OutboxRow) -> bytes:
+    """Envelope canónico (P §1) ya persistido en `payload` → bytes JSON."""
+    return json.dumps(row.payload, ensure_ascii=False).encode("utf-8")
 
 
 class EventSender(Protocol):
@@ -128,7 +98,7 @@ class OutboxRelay:
     def __init__(
         self,
         session_factory: async_sessionmaker[AsyncSession],
-        settings: IdentitySettings,
+        settings: MarketDataSettings,
         *,
         sender_factory: Callable[[], EventSender] | None = None,
     ) -> None:
@@ -141,7 +111,7 @@ class OutboxRelay:
 
     async def start(self) -> None:
         self._stopped.clear()
-        self._task = asyncio.create_task(self._run(), name="identity-outbox-relay")
+        self._task = asyncio.create_task(self._run(), name="market-data-outbox-relay")
 
     async def stop(self) -> None:
         self._stopped.set()
@@ -173,13 +143,13 @@ class OutboxRelay:
             rows = list(
                 (
                     await session.execute(
-                        select(OutboxEvent)
+                        select(OutboxRow)
                         .where(
-                            OutboxEvent.published_at.is_(None),
-                            OutboxEvent.dead_lettered_at.is_(None),
-                            (OutboxEvent.next_attempt_at.is_(None)) | (OutboxEvent.next_attempt_at <= now),
+                            OutboxRow.published_at.is_(None),
+                            OutboxRow.dead_lettered_at.is_(None),
+                            (OutboxRow.next_attempt_at.is_(None)) | (OutboxRow.next_attempt_at <= now),
                         )
-                        .order_by(OutboxEvent.created_at)
+                        .order_by(OutboxRow.created_at)
                         .limit(settings.outbox_batch_size)
                     )
                 ).scalars()
@@ -206,7 +176,7 @@ class OutboxRelay:
                         row.last_error = None
                         published += 1
                 except Exception as exc:
-                    if isinstance(exc, _CONNECTION_ERRORS):
+                    if isinstance(exc, CONNECTION_ERRORS):
                         connection_error = exc
                         await self._dispose_sender()
                     self._record_failure(row, exc, max_attempts)
@@ -215,8 +185,8 @@ class OutboxRelay:
                         "publicación del outbox fallida",
                         extra={
                             "extra_fields": {
-                                "event_id": row.id,
                                 "event_type": row.event_type,
+                                "topic": row.topic,
                                 "error": str(exc)[:MAX_ERROR_LENGTH],
                             }
                         },
@@ -225,8 +195,8 @@ class OutboxRelay:
 
             backlog = await session.scalar(
                 select(func.count())
-                .select_from(OutboxEvent)
-                .where(OutboxEvent.published_at.is_(None), OutboxEvent.dead_lettered_at.is_(None))
+                .select_from(OutboxRow)
+                .where(OutboxRow.published_at.is_(None), OutboxRow.dead_lettered_at.is_(None))
             )
         BACKLOG_GAUGE.labels(settings.service_name).set(int(backlog or 0))
         if published:
@@ -237,7 +207,7 @@ class OutboxRelay:
             logger.warning("eventos del outbox requieren reintento", extra={"extra_fields": {"cantidad": failed}})
         return published
 
-    def _record_failure(self, row: OutboxEvent, exc: Exception, max_attempts: int) -> None:
+    def _record_failure(self, row: OutboxRow, exc: Exception, max_attempts: int) -> None:
         row.publish_attempts += 1
         row.last_error = str(exc)[:MAX_ERROR_LENGTH]
         if row.publish_attempts == max_attempts:
@@ -257,24 +227,24 @@ class OutboxRelay:
             with contextlib.suppress(Exception):
                 await sender.close()
 
-    async def _send_event(self, row: OutboxEvent) -> None:
-        topic = topic_for_event(row.producer, row.aggregate_type, row.event_type)
-        await self._get_sender().send(topic=topic, key=row.aggregate_id.encode("utf-8"), value=encode_envelope(row))
+    async def _send_event(self, row: OutboxRow) -> None:
+        key = str(row.payload.get("aggregate_id", row.id))
+        await self._get_sender().send(topic=row.topic, key=key.encode("utf-8"), value=encode_payload(row))
 
-    async def _send_dlq(self, row: OutboxEvent) -> None:
-        original_topic = topic_for_event(row.producer, row.aggregate_type, row.event_type)
+    async def _send_dlq(self, row: OutboxRow) -> None:
+        key = str(row.payload.get("aggregate_id", row.id))
         body = {
             "dlq_reason": "max_attempts_exceeded",
-            "original_topic": original_topic,
+            "original_topic": row.topic,
             "attempts": row.publish_attempts,
             "last_error": row.last_error,
-            "envelope": json.loads(encode_envelope(row).decode("utf-8")),
+            "envelope": row.payload,
         }
         await self._get_sender().send(
-            topic=dlq_topic(original_topic),
-            key=row.aggregate_id.encode("utf-8"),
+            topic=dlq_topic(row.topic),
+            key=key.encode("utf-8"),
             value=json.dumps(body, ensure_ascii=False).encode("utf-8"),
         )
 
 
-__all__ = ["EventSender", "KafkaEventSender", "OutboxRelay", "compute_backoff_ms", "encode_envelope"]
+__all__ = ["EventSender", "KafkaEventSender", "OutboxRelay", "compute_backoff_ms", "encode_payload"]

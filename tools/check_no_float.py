@@ -38,7 +38,7 @@ KNOWN_EXCEPTIONS: dict[str, str] = {
 TIMING_RE = re.compile(
     r"\b(seconds?|minutes?|hours?|days?|weeks?|timeout|retry|retries|delay|"
     r"interval|backoff|sleep|duration|jitter|cooldown|elapsed|deadline|"
-    r"monotonic|mono|clock|health|ttl|at|buckets?)\b",
+    r"monotonic|mono|clock|health|ttl|at|buckets?|timer|ping|activity|now)\b",
     re.IGNORECASE,
 )
 

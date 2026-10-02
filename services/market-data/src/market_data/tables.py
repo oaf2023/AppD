@@ -1,4 +1,4 @@
-"""tables — tablas SQL del schema `market_data` (O-database-strategy §2/§9, BUILD-027/028).
+"""tables — tablas SQL del schema `market_data` (O-database-strategy §2/§9, BUILD-027/028/029).
 
 Pipeline de precios (BUILD-027):
 - `ticks`: tick normalizado con deduplicación `(symbol, source, ts, price)`
@@ -17,8 +17,8 @@ Symbol master y estado de mercado (BUILD-028):
 - `market_suspensions`: suspensiones explícitas (`halted`, REQ-099).
 - `market_holidays`: calendarios de festivos (K §2 `holiday_calendar`); el
   seed demo no declara festivos (cierres por sesión).
-- `outbox`: eventos `SymbolUpdated` listos para el bus (K §4.2; drain en
-  BUILD-029 — `market.symbols.changed`).
+- `outbox`: eventos `SymbolUpdated` listos para el bus (K §4.2; drain a
+  `market.symbols.changed` con reintentos/DLQ — BUILD-029, `outbox.py`).
 
 `ticks`/`candles` **no** llevan FK a `symbols`: el histórico sobrevive a
 cambios de catálogo (REQ-025: cambiar la spec no rompe datos previos).
@@ -249,12 +249,24 @@ class MarketHolidayRow(Base):
 
 
 class OutboxRow(Base):
-    """Outbox transaccional de eventos del dominio (K §4.2; drain en BUILD-029)."""
+    """Outbox transaccional de eventos del dominio (K §4.2, drain → Redpanda).
+
+    Columnas de estado del relay (BUILD-029, migración `0003_outbox_relay`):
+    `published_at` marca la publicación; `publish_attempts`/`next_attempt_at`/
+    `last_error` gestionan reintentos con backoff; `dead_lettered_at` retiene
+    el evento envenenado (DLQ). El índice parcial `ix_outbox_pending` acelera
+    la consulta del relay (pendientes = sin publicar ni derivar a DLQ).
+    """
 
     __tablename__ = "outbox"
     __table_args__ = (
         Index("ix_outbox_created_at", "created_at"),
         Index("ix_outbox_topic", "topic"),
+        Index(
+            "ix_outbox_pending",
+            "created_at",
+            postgresql_where=text("published_at IS NULL AND dead_lettered_at IS NULL"),
+        ),
         {"schema": SCHEMA},
     )
 
@@ -263,6 +275,11 @@ class OutboxRow(Base):
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    publish_attempts: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    last_error: Mapped[str | None] = mapped_column(String(2000))
+    dead_lettered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 __all__ = [

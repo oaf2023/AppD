@@ -7,7 +7,7 @@
 |---|---|---|
 | [01-outbox-redpanda.md](01-outbox-redpanda.md) | Outbox de `identity` → relay Redpanda → consumidor `audit` (DLQ, backoff) | `IMPLEMENTADO` y verificado en local **y** en el despliegue OMV (`deploy/README.md`) |
 | [02-restore-postgres.md](02-restore-postgres.md) | Backup/restore PostgreSQL 17 local (volumen `pgdata`) | Solo local/dev (en OMV el volumen es `pgdata` del proyecto `platform-omv`) |
-| [03-websocket.md](03-websocket.md) | **ALCANCE FUTURO (Fase 3)** — streaming WS aún inexistente; checklist de activación | `PENDIENTE` (Fase 3, BUILD-029) |
+| [03-websocket.md](03-websocket.md) | Hub WS `/ws/v1` de `market-data`: diagnóstico por código de cierre, límites, resync y relay outbox → Redpanda | `IMPLEMENTADO` (hub y AsyncAPI desde BUILD-029; benchmark k6 y alertas aún pendientes) |
 
 > El runbook de **despliegue/operación en servidor OMV** (puertos 40000-40100,
 > actualizaciones, perfiles) vive en [`deploy/README.md`](../../deploy/README.md).

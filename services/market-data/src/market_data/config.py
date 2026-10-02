@@ -47,6 +47,45 @@ class MarketDataSettings(KernelSettings):
     ingest_enabled: bool = False
     ingest_interval_seconds: float = 5.0
 
+    # Modo del hub (R §1): `live_trading=false` ⇒ todo payload `DEMO`.
+    flag_live_trading: bool = False
+
+    # Bus Redpanda + relay del outbox `SymbolUpdated` (K §4.2, BUILD-029).
+    # El relay va apagado por defecto (mismo criterio que `ingest_enabled`);
+    # el deploy local/OMV lo activa explícitamente con `OUTBOX_RELAY_ENABLED`.
+    redpanda_bootstrap_servers: str = "127.0.0.1:19092"
+    outbox_relay_enabled: bool = False
+    outbox_relay_interval_ms: int = 500
+    outbox_max_attempts: int = 5
+    outbox_batch_size: int = 100
+
+    # Hub WebSocket interno `/ws/v1` (R-websocket-map §2/§3/§5, BUILD-029).
+    ws_auth_timeout_seconds: float = 5.0
+    ws_heartbeat_interval_seconds: float = 20.0
+    ws_idle_timeout_seconds: float = 120.0
+    ws_ring_max_messages: int = 1000
+    ws_ring_max_age_seconds: int = 300
+    ws_max_subscriptions: int = 50
+    ws_max_connections_per_user: int = 5
+    ws_max_connections_per_ip: int = 50
+    ws_frames_per_second: int = 20
+    ws_frames_per_minute: int = 60
+    ws_subscribe_per_minute: int = 30
+    ws_queue_max_frames: int = 1000
+    ws_frame_max_bytes: int = 65536
+    ws_string_max_bytes: int = 1024
+    ws_ping_min_interval_seconds: float = 5.0
+    #: Orígenes `Origin` permitidos (R §6); vacío = sin restricción.
+    ws_allowed_origins: str = ""
+
+    @property
+    def ws_allowed_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.ws_allowed_origins.split(",") if o.strip()]
+
+    @property
+    def ws_mode(self) -> str:
+        return "LIVE" if self.flag_live_trading else "DEMO"
+
 
 @lru_cache(maxsize=1)
 def get_market_data_settings() -> MarketDataSettings:
